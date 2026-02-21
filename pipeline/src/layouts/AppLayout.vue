@@ -141,7 +141,7 @@
 </template>
 
 <script setup>
-import { BarChart3, Bell, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X } from "lucide-vue-next"
+import { BarChart3, Bell, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 
@@ -151,6 +151,7 @@ const cmdOpen = ref(false)
 const cmdInput = ref(null)
 
 const mainNav = [
+  { path: "/go", label: "Go", icon: Zap, badge: null },
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, badge: null },
   { path: "/pipeline", label: "Pipeline", icon: Workflow, badge: "3" },
   { path: "/inbox", label: "Inbox", icon: Inbox, badge: "12" },
