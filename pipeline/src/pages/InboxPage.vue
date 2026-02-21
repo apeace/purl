@@ -1,18 +1,537 @@
 <template>
-  <div class="page">
-    <h1 class="page-title">Inbox</h1>
+  <div class="inbox">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <label class="cb-wrap" title="Select all">
+        <input
+          type="checkbox"
+          class="cb"
+          :checked="allSelected"
+          :indeterminate="someSelected"
+          @change="toggleAll"
+        />
+      </label>
+
+      <Transition name="toolbar-swap">
+        <div v-if="anySelected" class="toolbar-actions" key="bulk">
+          <button class="toolbar-btn" title="Archive" @click="archiveSelected">
+            <Archive :size="15" />
+          </button>
+          <button class="toolbar-btn" title="Delete" @click="deleteSelected">
+            <Trash2 :size="15" />
+          </button>
+          <button class="toolbar-btn" title="Mark as read" @click="markReadSelected">
+            <MailOpen :size="15" />
+          </button>
+          <span class="selection-count">{{ selected.size }} selected</span>
+        </div>
+        <div v-else class="toolbar-actions" key="default">
+          <button class="toolbar-btn" title="Refresh" @click="refresh">
+            <RefreshCw :size="15" :class="{ 'spinning': refreshing }" />
+          </button>
+        </div>
+      </Transition>
+
+      <div class="toolbar-spacer" />
+      <span class="pagination-info">1–{{ emails.length }} of 247</span>
+      <button class="toolbar-btn" title="Newer" disabled><ChevronLeft :size="16" /></button>
+      <button class="toolbar-btn" title="Older"><ChevronRight :size="16" /></button>
+    </div>
+
+    <!-- Email list -->
+    <div class="email-list">
+      <TransitionGroup name="row">
+        <div
+          v-for="email in emails"
+          :key="email.id"
+          class="email-row"
+          :class="{
+            'email-row--unread': !email.read,
+            'email-row--selected': selected.has(email.id),
+          }"
+          @click="openEmail(email)"
+        >
+          <!-- Checkbox + star -->
+          <div class="row-left">
+            <label class="cb-wrap" @click.stop>
+              <input
+                type="checkbox"
+                class="cb"
+                :checked="selected.has(email.id)"
+                @change="toggleSelect(email.id)"
+              />
+            </label>
+            <button
+              class="star-btn"
+              :class="{ 'star-btn--on': email.starred }"
+              title="Star"
+              @click.stop="email.starred = !email.starred"
+            >
+              <Star :size="14" />
+            </button>
+          </div>
+
+          <!-- Sender -->
+          <div class="row-sender">
+            <div class="sender-avatar" :style="{ background: email.sender.color }">
+              {{ email.sender.name[0] }}
+            </div>
+            <span class="sender-name">{{ email.sender.name }}</span>
+          </div>
+
+          <!-- Subject + preview -->
+          <div class="row-content">
+            <span class="row-subject">{{ email.subject }}</span>
+            <span class="row-sep"> — </span>
+            <span class="row-preview">{{ email.preview }}</span>
+          </div>
+
+          <!-- Labels -->
+          <div class="row-labels">
+            <span
+              v-for="label in email.labels"
+              :key="label"
+              class="label"
+              :class="`label--${label}`"
+            >{{ label }}</span>
+          </div>
+
+          <!-- Time -->
+          <span class="row-time">{{ email.time }}</span>
+        </div>
+      </TransitionGroup>
+    </div>
+
   </div>
 </template>
 
-<style scoped>
-.page {
-  padding: 32px 24px;
+<script setup>
+import { Archive, ChevronLeft, ChevronRight, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
+import { computed, reactive, ref } from "vue"
+
+const emails = ref([
+  { id: 1,  read: false, starred: true,  sender: { name: "Sarah Lin",     color: "#6366f1" }, subject: "Setup not working after update",        preview: "Hi, after the latest update we can't access the admin panel. It just shows a blank screen. We've tried clearing the cache and restarting...",   labels: ["urgent"],          time: "2:14 PM"  },
+  { id: 2,  read: false, starred: false, sender: { name: "Mike Torres",    color: "#ec4899" }, subject: "Can't export CSV report",                preview: "The CSV export button on the Reports page doesn't do anything when I click it. No download, no error — just nothing. Started this morning.",     labels: ["bug"],             time: "1:47 PM"  },
+  { id: 3,  read: true,  starred: false, sender: { name: "Priya Patel",    color: "#34d399" }, subject: "Billing discrepancy on March invoice",   preview: "Our March invoice shows $2,400 but we're on the $1,800/mo plan. We haven't added any seats or changed our plan. Can you investigate?",         labels: ["billing"],         time: "12:30 PM" },
+  { id: 4,  read: false, starred: false, sender: { name: "James Kim",      color: "#f59e0b" }, subject: "API rate limit hit unexpectedly",        preview: "We're getting 429 errors on the /events endpoint even though our dashboard shows we're only at 40% of our quota. Started about an hour ago.", labels: ["urgent", "bug"],   time: "11:15 AM" },
+  { id: 5,  read: true,  starred: true,  sender: { name: "Aisha Johnson",  color: "#a855f7" }, subject: "Feature request: bulk export",           preview: "Hi team, we'd love to be able to bulk export all our data in one click. Currently we have to go page by page which takes forever for us.",      labels: ["feature"],         time: "10:02 AM" },
+  { id: 6,  read: true,  starred: false, sender: { name: "Carlos Mendez",  color: "#06b6d4" }, subject: "Re: Password reset not working",         preview: "Thanks for the quick fix! The password reset is working perfectly now. I'll let the rest of my team know. Really appreciate the fast response.", labels: [],                  time: "9:44 AM"  },
+  { id: 7,  read: true,  starred: false, sender: { name: "Emma Wilson",    color: "#f43f5e" }, subject: "Salesforce integration question",        preview: "We're looking to integrate Pipeline with our Salesforce setup. Is there a native connector available or would we need to use the API directly?",  labels: ["feature"],         time: "Yesterday" },
+  { id: 8,  read: false, starred: false, sender: { name: "David Park",     color: "#8b5cf6" }, subject: "Webhook failing silently",               preview: "Our webhook endpoint is registered and the URL is correct, but events just aren't arriving. No errors in logs either. This broke overnight.",     labels: ["bug", "urgent"],   time: "Yesterday" },
+  { id: 9,  read: true,  starred: false, sender: { name: "Mei Zhang",      color: "#10b981" }, subject: "GDPR data export request",               preview: "Hi, one of our customers has submitted a formal data export request under GDPR Article 20. What's the process for fulfilling this through Pipeline?", labels: ["billing"],         time: "Mon"       },
+  { id: 10, read: true,  starred: false, sender: { name: "Raj Patel",      color: "#f97316" }, subject: "Login screen shows wrong logo",          preview: "Since the last update, the login screen is displaying our old company logo instead of the one we uploaded in brand settings last month.",         labels: ["bug"],             time: "Mon"       },
+  { id: 11, read: true,  starred: true,  sender: { name: "Sophie Turner",  color: "#6366f1" }, subject: "Interested in upgrading to Enterprise",  preview: "We've been really happy with Pipeline and want to discuss upgrading to the Enterprise plan. Can someone from your team reach out to us?",       labels: [],                  time: "Sun"       },
+  { id: 12, read: true,  starred: false, sender: { name: "Alex Rivera",    color: "#ec4899" }, subject: "SSO configuration not persisting",       preview: "We configured our SAML SSO settings but they don't seem to save. Every time we navigate away and come back the fields are blank again.",        labels: ["bug"],             time: "Mar 18"    },
+])
+
+// ── Selection ────────────────────────────────────────────
+
+const selected = reactive(new Set())
+
+const anySelected = computed(() => selected.size > 0)
+const allSelected = computed(() => selected.size === emails.value.length)
+const someSelected = computed(() => selected.size > 0 && selected.size < emails.value.length)
+
+function toggleSelect(id) {
+  if (selected.has(id)) selected.delete(id)
+  else selected.add(id)
 }
 
-.page-title {
-  font-size: 1.5rem;
+function toggleAll() {
+  if (allSelected.value) {
+    selected.clear()
+  } else {
+    emails.value.forEach((e) => selected.add(e.id))
+  }
+}
+
+// ── Bulk actions ─────────────────────────────────────────
+
+function archiveSelected() {
+  emails.value = emails.value.filter((e) => !selected.has(e.id))
+  selected.clear()
+}
+
+function deleteSelected() {
+  emails.value = emails.value.filter((e) => !selected.has(e.id))
+  selected.clear()
+}
+
+function markReadSelected() {
+  emails.value.forEach((e) => { if (selected.has(e.id)) e.read = true })
+  selected.clear()
+}
+
+// ── Row actions ───────────────────────────────────────────
+
+function openEmail(email) {
+  email.read = true
+}
+
+// ── Refresh ───────────────────────────────────────────────
+
+const refreshing = ref(false)
+
+function refresh() {
+  refreshing.value = true
+  setTimeout(() => { refreshing.value = false }, 700)
+}
+</script>
+
+<style scoped>
+/* ── Shell ───────────────────────────────────────────────── */
+
+.inbox {
+  /* Stretch past page-wrap padding to fill the content area edge-to-edge */
+  margin: -28px;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────── */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  position: sticky;
+  top: 56px; /* sits below the app topbar */
+  z-index: 10;
+  background: rgba(10, 14, 26, 0.95);
+  backdrop-filter: blur(12px);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.toolbar-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+}
+
+.toolbar-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.selection-count {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.6);
+  padding: 0 8px;
+}
+
+.pagination-info {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.4);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+/* ── Checkbox ────────────────────────────────────────────── */
+
+.cb-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.cb {
+  width: 15px;
+  height: 15px;
+  accent-color: #6366f1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Email list ──────────────────────────────────────────── */
+
+.email-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.email-row {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background 0.12s;
+  min-height: 52px;
+  position: relative;
+}
+
+.email-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.email-row--selected {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.email-row--selected:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+/* Unread accent line on left edge */
+.email-row--unread::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 20%;
+  height: 60%;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: #6366f1;
+}
+
+/* ── Row: left controls ──────────────────────────────────── */
+
+.row-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0 4px;
+  flex-shrink: 0;
+}
+
+.star-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.25);
+  cursor: pointer;
+  transition: color 0.15s, transform 0.15s;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.star-btn:hover {
+  color: #f59e0b;
+  transform: scale(1.15);
+}
+
+.star-btn--on {
+  color: #f59e0b;
+}
+
+/* ── Row: sender ─────────────────────────────────────────── */
+
+.row-sender {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 160px;
+  flex-shrink: 0;
+  padding-right: 12px;
+}
+
+.sender-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
   font-weight: 700;
-  color: #0f172a;
-  letter-spacing: -0.02em;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.sender-name {
+  font-size: 13px;
+  font-weight: 400;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.email-row--unread .sender-name {
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+/* ── Row: content ────────────────────────────────────────── */
+
+.row-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0;
+  overflow: hidden;
+  padding-right: 12px;
+}
+
+.row-subject {
+  font-size: 13px;
+  font-weight: 400;
+  color: #94a3b8;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.email-row--unread .row-subject {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.row-sep {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.3);
+  flex-shrink: 0;
+}
+
+.row-preview {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Row: labels ─────────────────────────────────────────── */
+
+.row-labels {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-right: 12px;
+}
+
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.label--urgent {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.label--bug {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+}
+
+.label--billing {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+}
+
+.label--feature {
+  background: rgba(168, 85, 247, 0.12);
+  color: #d8b4fe;
+}
+
+/* ── Row: time ───────────────────────────────────────────── */
+
+.row-time {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.4);
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 56px;
+  text-align: right;
+}
+
+.email-row--unread .row-time {
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.7);
+}
+
+/* ── Refresh spin ────────────────────────────────────────── */
+
+.spinning {
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Transitions ─────────────────────────────────────────── */
+
+.toolbar-swap-enter-active,
+.toolbar-swap-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+  position: absolute;
+}
+
+.toolbar-swap-enter-from,
+.toolbar-swap-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.row-leave-active {
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.row-leave-to {
+  opacity: 0;
+  transform: translateX(-12px);
+}
+
+/* ── Mobile ──────────────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .inbox {
+    margin: -16px;
+  }
+
+  .toolbar {
+    top: 0;
+  }
+
+  .row-sender {
+    width: 120px;
+  }
+
+  /* Hide preview snippet on small screens */
+  .row-sep,
+  .row-preview {
+    display: none;
+  }
+
+  /* Hide labels on small screens */
+  .row-labels {
+    display: none;
+  }
 }
 </style>
