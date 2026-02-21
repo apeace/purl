@@ -152,9 +152,9 @@ const cmdInput = ref(null)
 
 const mainNav = [
   { path: "/go", label: "Go", icon: Zap, badge: null },
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, badge: null },
   { path: "/pipeline", label: "Pipeline", icon: Workflow, badge: "3" },
   { path: "/inbox", label: "Inbox", icon: Inbox, badge: "12" },
+  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, badge: null },
   { path: "/reporting", label: "Reporting", icon: BarChart3, badge: null },
 ]
 
