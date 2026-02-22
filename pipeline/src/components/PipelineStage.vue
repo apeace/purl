@@ -12,11 +12,16 @@
         class="deal-card"
         :style="{ '--accent': color }"
       >
-        <div class="deal-name">{{ item.name }}</div>
-        <div class="deal-company">{{ item.company }}</div>
-        <div class="deal-footer">
-          <span class="deal-value" :style="{ color }">{{ item.value }}</span>
-          <div class="deal-owner" :style="{ background: item.avatarColor }">{{ item.owner }}</div>
+        <div class="deal-top">
+          <div class="deal-avatar" :style="{ background: item.avatarColor }">{{ item.name[0] }}</div>
+          <div class="deal-meta">
+            <div class="deal-name">{{ item.name }}</div>
+            <div class="deal-company">{{ item.company }}</div>
+          </div>
+        </div>
+        <div class="deal-subject">{{ item.subject }}</div>
+        <div v-if="item.priority" class="deal-footer">
+          <span class="deal-priority" :class="`deal-priority--${item.priority}`">{{ item.priority }}</span>
         </div>
       </div>
     </div>
@@ -109,33 +114,16 @@ onMounted(() => {
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
-.deal-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e2e8f0;
-  margin-bottom: 4px;
-}
-
-.deal-company {
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.6);
-}
-
-.deal-footer {
+.deal-top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
+  gap: 8px;
+  margin-bottom: 8px;
 }
 
-.deal-value {
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.deal-owner {
-  width: 22px;
-  height: 22px;
+.deal-avatar {
+  width: 24px;
+  height: 24px;
   border-radius: 7px;
   display: flex;
   align-items: center;
@@ -143,5 +131,61 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 700;
   color: #fff;
+  flex-shrink: 0;
+}
+
+.deal-meta {
+  min-width: 0;
+}
+
+.deal-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1.2;
+}
+
+.deal-company {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.5);
+}
+
+.deal-subject {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.7);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.deal-footer {
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.deal-priority {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  text-transform: capitalize;
+}
+
+.deal-priority--high {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.deal-priority--medium {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+}
+
+.deal-priority--low {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
 }
 </style>

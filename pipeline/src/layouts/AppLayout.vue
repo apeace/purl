@@ -66,7 +66,6 @@
         >
           <component :is="item.icon" :size="18" class="nav-icon" />
           <span class="nav-label">{{ item.label }}</span>
-          <span v-if="item.badge" class="nav-badge">{{ item.badge }}</span>
         </RouterLink>
       </nav>
 
@@ -151,11 +150,11 @@ const cmdOpen = ref(false)
 const cmdInput = ref(null)
 
 const mainNav = [
-  { path: "/go", label: "Go", icon: Zap, badge: null },
-  { path: "/pipeline", label: "Pipeline", icon: Workflow, badge: "3" },
-  { path: "/inbox", label: "Inbox", icon: Inbox, badge: "12" },
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, badge: null },
-  { path: "/reporting", label: "Reporting", icon: BarChart3, badge: null },
+  { path: "/go", label: "Go", icon: Zap },
+  { path: "/pipeline", label: "Pipeline", icon: Workflow },
+  { path: "/inbox", label: "Inbox", icon: Inbox },
+  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { path: "/reporting", label: "Reporting", icon: BarChart3 },
 ]
 
 const cmdItems = [
@@ -515,22 +514,6 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   flex: 1;
 }
 
-.nav-badge {
-  font-size: 10px;
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(148, 163, 184, 0.6);
-  border-radius: 6px;
-  padding: 1px 7px;
-  min-width: 20px;
-  text-align: center;
-}
-
-.nav-item--active .nav-badge {
-  background: rgba(99, 102, 241, 0.25);
-  color: #a5b4fc;
-}
-
 /* ---- Sidebar footer ---- */
 
 .sidebar-footer {
@@ -786,8 +769,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
     padding: 10px;
   }
 
-  .sidebar--collapsed .nav-label,
-  .sidebar--collapsed .nav-badge {
+  .sidebar--collapsed .nav-label {
     display: none;
   }
 

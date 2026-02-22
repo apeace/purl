@@ -66,7 +66,7 @@
               class="star-btn"
               :class="{ 'star-btn--on': email.starred }"
               title="Star"
-              @click.stop="email.starred = !email.starred"
+              @click.stop="handleToggleStar(email)"
             >
               <Star :size="14" />
             </button>
@@ -109,21 +109,31 @@
 <script setup>
 import { Archive, ChevronLeft, ChevronRight, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { computed, reactive, ref } from "vue"
+import { useTickets } from "../composables/useTickets.js"
 
-const emails = ref([
-  { id: 1,  read: false, starred: true,  sender: { name: "Sarah Lin",     color: "#6366f1" }, subject: "Setup not working after update",        preview: "Hi, after the latest update we can't access the admin panel. It just shows a blank screen. We've tried clearing the cache and restarting...",   labels: ["urgent"],          time: "2:14 PM"  },
-  { id: 2,  read: false, starred: false, sender: { name: "Mike Torres",    color: "#ec4899" }, subject: "Can't export CSV report",                preview: "The CSV export button on the Reports page doesn't do anything when I click it. No download, no error — just nothing. Started this morning.",     labels: ["bug"],             time: "1:47 PM"  },
-  { id: 3,  read: true,  starred: false, sender: { name: "Priya Patel",    color: "#34d399" }, subject: "Billing discrepancy on March invoice",   preview: "Our March invoice shows $2,400 but we're on the $1,800/mo plan. We haven't added any seats or changed our plan. Can you investigate?",         labels: ["billing"],         time: "12:30 PM" },
-  { id: 4,  read: false, starred: false, sender: { name: "James Kim",      color: "#f59e0b" }, subject: "API rate limit hit unexpectedly",        preview: "We're getting 429 errors on the /events endpoint even though our dashboard shows we're only at 40% of our quota. Started about an hour ago.", labels: ["urgent", "bug"],   time: "11:15 AM" },
-  { id: 5,  read: true,  starred: true,  sender: { name: "Aisha Johnson",  color: "#a855f7" }, subject: "Feature request: bulk export",           preview: "Hi team, we'd love to be able to bulk export all our data in one click. Currently we have to go page by page which takes forever for us.",      labels: ["feature"],         time: "10:02 AM" },
-  { id: 6,  read: true,  starred: false, sender: { name: "Carlos Mendez",  color: "#06b6d4" }, subject: "Re: Password reset not working",         preview: "Thanks for the quick fix! The password reset is working perfectly now. I'll let the rest of my team know. Really appreciate the fast response.", labels: [],                  time: "9:44 AM"  },
-  { id: 7,  read: true,  starred: false, sender: { name: "Emma Wilson",    color: "#f43f5e" }, subject: "Salesforce integration question",        preview: "We're looking to integrate Pipeline with our Salesforce setup. Is there a native connector available or would we need to use the API directly?",  labels: ["feature"],         time: "Yesterday" },
-  { id: 8,  read: false, starred: false, sender: { name: "David Park",     color: "#8b5cf6" }, subject: "Webhook failing silently",               preview: "Our webhook endpoint is registered and the URL is correct, but events just aren't arriving. No errors in logs either. This broke overnight.",     labels: ["bug", "urgent"],   time: "Yesterday" },
-  { id: 9,  read: true,  starred: false, sender: { name: "Mei Zhang",      color: "#10b981" }, subject: "GDPR data export request",               preview: "Hi, one of our customers has submitted a formal data export request under GDPR Article 20. What's the process for fulfilling this through Pipeline?", labels: ["billing"],         time: "Mon"       },
-  { id: 10, read: true,  starred: false, sender: { name: "Raj Patel",      color: "#f97316" }, subject: "Login screen shows wrong logo",          preview: "Since the last update, the login screen is displaying our old company logo instead of the one we uploaded in brand settings last month.",         labels: ["bug"],             time: "Mon"       },
-  { id: 11, read: true,  starred: true,  sender: { name: "Sophie Turner",  color: "#6366f1" }, subject: "Interested in upgrading to Enterprise",  preview: "We've been really happy with Pipeline and want to discuss upgrading to the Enterprise plan. Can someone from your team reach out to us?",       labels: [],                  time: "Sun"       },
-  { id: 12, read: true,  starred: false, sender: { name: "Alex Rivera",    color: "#ec4899" }, subject: "SSO configuration not persisting",       preview: "We configured our SAML SSO settings but they don't seem to save. Every time we navigate away and come back the fields are blank again.",        labels: ["bug"],             time: "Mar 18"    },
-])
+const {
+  archiveTicket,
+  deleteTicket,
+  markRead,
+  tickets,
+  toggleStar,
+} = useTickets()
+
+// Derive inbox rows from shared tickets (exclude closed)
+const emails = computed(() =>
+  tickets.value
+    .filter((t) => t.status !== "closed")
+    .map((t) => ({
+      id: t.id,
+      read: t.read,
+      starred: t.starred,
+      sender: { name: t.name, color: t.avatarColor },
+      subject: t.subject,
+      preview: t.messages[t.messages.length - 1]?.text ?? "",
+      labels: t.labels,
+      time: t.time,
+    }))
+)
 
 // ── Selection ────────────────────────────────────────────
 
@@ -149,24 +159,28 @@ function toggleAll() {
 // ── Bulk actions ─────────────────────────────────────────
 
 function archiveSelected() {
-  emails.value = emails.value.filter((e) => !selected.has(e.id))
+  selected.forEach((id) => archiveTicket(id))
   selected.clear()
 }
 
 function deleteSelected() {
-  emails.value = emails.value.filter((e) => !selected.has(e.id))
+  selected.forEach((id) => deleteTicket(id))
   selected.clear()
 }
 
 function markReadSelected() {
-  emails.value.forEach((e) => { if (selected.has(e.id)) e.read = true })
+  selected.forEach((id) => markRead(id))
   selected.clear()
 }
 
 // ── Row actions ───────────────────────────────────────────
 
 function openEmail(email) {
-  email.read = true
+  markRead(email.id)
+}
+
+function handleToggleStar(email) {
+  toggleStar(email.id)
 }
 
 // ── Refresh ───────────────────────────────────────────────

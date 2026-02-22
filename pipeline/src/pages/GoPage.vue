@@ -213,92 +213,20 @@
 <script setup>
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Send, Sparkles, Zap } from "lucide-vue-next"
 import { computed, nextTick, ref, watch } from "vue"
+import { useTickets } from "../composables/useTickets.js"
 
-// ── Data ────────────────────────────────────────────────
-
-const threads = ref([
-  {
-    id: 1,
-    name: "Sarah Lin",
-    company: "Acme Corp",
-    ticketId: "#1842",
-    subject: "Setup not working after update",
-    priority: "high",
-    wait: "2h 15m",
-    avatarColor: "#6366f1",
-    messages: [
-      { id: 1, from: "customer", time: "2h ago", text: "Hi, after the latest update we can't access the admin panel. It just shows a blank screen. We've tried clearing the cache and restarting the server but nothing works. This is blocking our entire team." },
-      { id: 2, from: "agent", time: "1h 45m ago", text: "Hi Sarah, thanks for reaching out — sorry to hear you're blocked. Could you share which browser and OS version you're on? And do you see any errors in the browser console?" },
-      { id: 3, from: "customer", time: "45m ago", text: "Chrome 121 on Windows 11. The console shows: 'Error: Failed to load config.json — 404'. We have 15 people waiting on this, please help ASAP." },
-    ],
-  },
-  {
-    id: 2,
-    name: "Mike Torres",
-    company: "DataFlow",
-    ticketId: "#1839",
-    subject: "Can't export CSV report",
-    priority: "medium",
-    wait: "1h 20m",
-    avatarColor: "#ec4899",
-    messages: [
-      { id: 1, from: "customer", time: "1h 20m ago", text: "The CSV export button on the Reports page doesn't do anything when I click it. No download, no error — just nothing. Started happening this morning." },
-    ],
-  },
-  {
-    id: 3,
-    name: "Priya Patel",
-    company: "Orion Labs",
-    ticketId: "#1847",
-    subject: "Billing discrepancy on March invoice",
-    priority: "medium",
-    wait: "45m",
-    avatarColor: "#34d399",
-    messages: [
-      { id: 1, from: "customer", time: "45m ago", text: "Our March invoice shows $2,400 but we're on the $1,800/mo plan. We haven't added any seats or changed our plan. Can you investigate?" },
-    ],
-  },
-  {
-    id: 4,
-    name: "James Kim",
-    company: "NexGen Inc",
-    ticketId: "#1851",
-    subject: "API rate limit hit unexpectedly",
-    priority: "high",
-    wait: "30m",
-    avatarColor: "#f59e0b",
-    messages: [
-      { id: 1, from: "customer", time: "30m ago", text: "We're getting 429 errors on the /events endpoint even though our dashboard shows we're only at 40% of our rate limit quota. This started about an hour ago." },
-    ],
-  },
-])
-
-const aiSuggestions = {
-  1: {
-    headline: "Config 404 — matches known post-update bug",
-    body: "Sarah's error is identical to 3 tickets resolved last week after the v2.4 rollout. A missing config.json is caused by the new deploy script skipping static asset copy. Send the one-line fix and mark resolved.",
-    action: "Send fix & resolve",
-    replyText: "Hi Sarah! This is a known issue with the v2.4 update — the deploy script misses copying config.json. Run this in your project root: `cp node_modules/@pipeline/defaults/config.json public/`. That should fix it immediately. Let me know if you need anything else!",
-  },
-  2: {
-    headline: "CSV export bug — patch ships in 24h",
-    body: "This is a confirmed bug in v2.4.1 affecting all accounts on Chrome. Engineering has a fix merging today, deploying tomorrow morning. Recommend acknowledging and setting the expectation.",
-    action: "Acknowledge & set ETA",
-    replyText: "Hi Mike! This is a confirmed bug in v2.4.1 — our team already has a fix and it's deploying tomorrow morning. I'll follow up as soon as it's live. Sorry for the inconvenience!",
-  },
-  3: {
-    headline: "Billing overage — likely proration edge case",
-    body: "Orion Labs upgraded mid-cycle on Mar 3rd. The $600 difference matches a prorated annual add-on. Check their billing history to confirm, then share the breakdown.",
-    action: "Pull billing history",
-    replyText: "Hi Priya! I looked into this — the $600 difference is a prorated charge for the annual add-on activated on March 3rd. I've attached the itemized breakdown. Let me know if anything looks off and I'm happy to escalate to billing.",
-  },
-  4: {
-    headline: "Rate limit counter bug — known issue",
-    body: "The dashboard quota display has a caching lag of ~2h, so real usage can exceed what's shown. Check their actual usage in the admin panel and consider a temporary limit increase.",
-    action: "Check usage & offer increase",
-    replyText: "Hi James! There's a known 2-hour caching lag in the dashboard quota display, so your real-time usage can exceed what's shown there. I checked your account directly and you've hit 94% of your limit. I've bumped your limit by 20% for the next 48 hours while we sort out a permanent solution.",
-  },
-}
+const {
+  aiSuggestions,
+  followAi: sharedFollowAi,
+  hudLongestWait,
+  hudOpen,
+  hudResolvedToday,
+  openTickets: threads,
+  parseWait,
+  resolveTicket,
+  resolvedToday,
+  sendReply: sharedSendReply,
+} = useTickets()
 
 const DAILY_GOAL = 20
 
@@ -309,24 +237,10 @@ const priorityOptions = [
   { id: "queue", label: "Work the queue", description: "Go through tickets in the order they came in", icon: ListOrdered, color: "#818cf8" },
 ]
 
-// ── Helpers ──────────────────────────────────────────────
-
-function parseWait(str) {
-  let mins = 0
-  const h = str.match(/(\d+)h/)
-  const m = str.match(/(\d+)m/)
-  if (h) mins += parseInt(h[1]) * 60
-  if (m) mins += parseInt(m[1])
-  return mins
-}
-
 // ── State ────────────────────────────────────────────────
 
 const activeId = ref(null)
 const chosenPriority = ref(null)
-const hudOpen = ref(14)
-const hudLongestWait = ref("2h 15m")
-const hudResolvedToday = ref(8)
 
 const barClipRight = computed(() => `${Math.max(0, 100 - (hudResolvedToday.value / DAILY_GOAL) * 100)}%`)
 const replyText = ref("")
@@ -355,13 +269,13 @@ const cardPreviews = computed(() => {
   const urgent = [...all].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
   const waiting = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
   const quick = [...all].sort((a, b) => (aiSuggestions[b.id] ? 1 : 0) - (aiSuggestions[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
-  const queue = [...all]
+  const queueSorted = [...all]
 
   return {
     urgent: urgent[0] ?? null,
     waiting: waiting[0] ?? null,
     quick: quick[0] ?? null,
-    queue: queue[0] ?? null,
+    queue: queueSorted[0] ?? null,
   }
 })
 
@@ -413,27 +327,25 @@ function choosePriority(opt) {
 
 function sendReply() {
   const text = replyText.value.trim()
-  if (!text) return
-  const msgs = activeThread.value.messages
-  msgs.push({ id: msgs.length + 1, from: "agent", time: "just now", text })
+  if (!text || !activeId.value) return
+  sharedSendReply(activeId.value, text)
   replyText.value = ""
   scrollToBottom()
 }
 
 function followAi() {
   const suggestion = currentAi.value
-  if (!suggestion) return
+  if (!suggestion || !activeId.value) return
   replyText.value = suggestion.replyText
   nextTick(() => sendReply())
 }
 
 function resolve() {
+  const currentId = activeId.value
   const nextThread = queue.value[0]
-  threads.value = threads.value.filter((t) => t.id !== activeId.value)
+  resolveTicket(currentId)
   activeId.value = nextThread ? nextThread.id : null
   replyText.value = ""
-  hudResolvedToday.value++
-  hudOpen.value = Math.max(0, hudOpen.value - 1)
 }
 
 function scrollToBottom() {
