@@ -1,8 +1,8 @@
 {
-  "name": "pipeline",
+  "name": "purl",
   "private": true,
   "workspaces": [
     "lib",
-    "pipeline"
+    "purl"
   ]
 }
