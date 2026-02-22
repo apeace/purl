@@ -12,8 +12,8 @@ From the `api/` directory:
 go run ./cmd/seed
 ```
 
-By default it connects to `postgres://pipeline:pipeline@localhost:5432/pipeline`. Override with `DATABASE_URL`:
+By default it connects to `postgres://pipeline:pipeline@localhost:5433/pipeline`. Override with `DATABASE_URL`:
 
 ```
-DATABASE_URL=postgres://user:pass@host:5432/db go run ./cmd/seed
+DATABASE_URL=postgres://user:pass@host:5433/db go run ./cmd/seed
 ```

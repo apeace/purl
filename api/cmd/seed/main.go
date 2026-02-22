@@ -108,7 +108,7 @@ func pick(s []string) string { return s[rand.Intn(len(s))] }
 func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://pipeline:pipeline@localhost:5432/pipeline?sslmode=disable"
+		dsn = "postgres://pipeline:pipeline@localhost:5433/pipeline?sslmode=disable"
 	}
 
 	db, err := sql.Open("pgx", dsn)

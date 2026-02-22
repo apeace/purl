@@ -29,9 +29,9 @@ type config struct {
 
 func loadConfig() config {
 	return config{
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://pipeline:pipeline@localhost:5432/pipeline?sslmode=disable"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6379"),
-		Port:        getEnv("PORT", "8080"),
+		DatabaseURL: getEnv("DATABASE_URL", "postgres://pipeline:pipeline@localhost:5433/pipeline?sslmode=disable"),
+		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6380"),
+		Port:        getEnv("PORT", "9090"),
 	}
 }
 

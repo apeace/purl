@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:8080"
+const BASE_URL = "http://localhost:9090"
 
 export const API_KEY_STORAGE_KEY = "pipeline_api_key"
 
