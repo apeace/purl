@@ -823,17 +823,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   }
 
   .topbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    height: 56px;
-    padding: 0 28px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    background: rgba(10, 14, 26, 0.5);
-    backdrop-filter: blur(20px);
-    position: sticky;
-    top: 0;
-    z-index: 20;
+    display: none;
   }
 
   .page-wrap {

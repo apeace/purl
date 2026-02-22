@@ -2,70 +2,148 @@
   <div class="go-page">
     <div class="go-split">
 
-      <!-- ── Left: Active thread ─────────────────────────── -->
-      <div class="thread-panel">
-        <div class="thread-header">
-          <div class="thread-meta">
-            <div class="thread-customer-row">
-              <div class="thread-avatar" :style="{ background: activeThread.avatarColor }">
-                {{ activeThread.name[0] }}
-              </div>
-              <div>
-                <div class="thread-name">{{ activeThread.name }}
-                  <span class="thread-company">· {{ activeThread.company }}</span>
-                </div>
-                <div class="thread-id">{{ activeThread.ticketId }}</div>
-              </div>
+      <!-- ── Left: AI Workspace (always present) ─────────── -->
+      <div class="workspace">
+
+        <!-- Lobby: AI guides you to a task -->
+        <div v-if="!activeThread" class="workspace-lobby">
+          <div class="lobby-content">
+            <div class="ai-lobby-icon">
+              <Sparkles :size="28" />
             </div>
-            <div class="thread-subject">{{ activeThread.subject }}</div>
-          </div>
-          <div class="thread-badges">
-            <span class="badge badge--open">Open</span>
-            <span class="badge" :class="`badge--${activeThread.priority}`">{{ activeThread.priority }}</span>
+
+            <div class="priority-grid">
+              <button
+                v-for="opt in priorityOptions"
+                :key="opt.id"
+                class="priority-card"
+                :class="{ 'priority-card--recommended': opt.id === recommendedStrategy }"
+                @click="choosePriority(opt)"
+              >
+                <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
+                  <Sparkles :size="10" /> Recommended
+                </div>
+                <component :is="opt.icon" :size="36" class="priority-icon" :style="{ color: opt.color }" />
+                <div class="priority-label">{{ opt.label }}</div>
+                <div class="priority-stats">
+                  <span class="priority-stat-value">{{ cardStats[opt.id].stat }}</span>
+                  <span class="priority-stat-detail">{{ cardStats[opt.id].detail }}</span>
+                </div>
+                <div v-if="cardPreviews[opt.id]" class="priority-preview">
+                  <div class="preview-label">Up next</div>
+                  <div class="preview-ticket">
+                    <div class="preview-ticket-top">
+                      <div class="preview-avatar" :style="{ background: cardPreviews[opt.id].avatarColor }">{{ cardPreviews[opt.id].name[0] }}</div>
+                      <span class="preview-name">{{ cardPreviews[opt.id].name }}</span>
+                      <span class="preview-badge" :class="`preview-badge--${cardPreviews[opt.id].priority}`">{{ cardPreviews[opt.id].priority }}</span>
+                    </div>
+                    <div class="preview-subject">{{ cardPreviews[opt.id].subject }}</div>
+                    <div class="preview-summary">{{ cardPreviews[opt.id].messages[0].text }}</div>
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div ref="messagesEl" class="thread-messages">
-          <TransitionGroup name="msg">
-            <div
-              v-for="msg in activeThread.messages"
-              :key="msg.id"
-              class="message"
-              :class="msg.from === 'agent' ? 'message--agent' : 'message--customer'"
-            >
-              <div v-if="msg.from === 'customer'" class="msg-avatar" :style="{ background: activeThread.avatarColor }">
-                {{ activeThread.name[0] }}
-              </div>
-              <div class="msg-bubble">
-                <div class="msg-header">
-                  <span class="msg-sender">{{ msg.from === 'agent' ? 'You' : activeThread.name }}</span>
-                  <span class="msg-time">{{ msg.time }}</span>
-                </div>
-                <div class="msg-body">{{ msg.text }}</div>
-              </div>
-              <div v-if="msg.from === 'agent'" class="msg-avatar msg-avatar--agent">Y</div>
-            </div>
-          </TransitionGroup>
-        </div>
-
-        <div class="thread-compose">
-          <textarea
-            v-model="replyText"
-            class="compose-input"
-            placeholder="Write a reply…"
-            rows="3"
-            @keydown.meta.enter="sendReply"
-          />
-          <div class="compose-actions">
-            <button class="btn btn--ghost" @click="resolve">Resolve</button>
-            <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
-              <Send :size="14" /> Send Reply
+        <!-- Active: AI assist + thread conversation -->
+        <div v-else class="workspace-active">
+          <!-- Strategy bar — back to lobby + queue nav -->
+          <div v-if="chosenOption" class="strategy-bar">
+            <button class="strategy-header" @click="activeId = null">
+              <component :is="chosenOption.icon" :size="16" :style="{ color: chosenOption.color }" />
+              <span class="strategy-header-label">{{ chosenOption.label }}</span>
             </button>
+            <div class="strategy-nav">
+              <span class="strategy-nav-pos">{{ queueIndex + 1 }} / {{ sortedQueue.length }}</span>
+              <button class="strategy-nav-btn" :disabled="!canGoPrev" @click="goPrev">
+                <ChevronLeft :size="18" />
+              </button>
+              <button class="strategy-nav-btn" :disabled="!canGoNext" @click="goNext">
+                <ChevronRight :size="18" />
+              </button>
+            </div>
+          </div>
+          <!-- AI assist banner (continuous AI presence) -->
+          <div v-if="currentAi" class="ai-assist">
+            <div class="ai-assist-top">
+              <div class="ai-badge">
+                <Sparkles :size="11" /> AI
+              </div>
+              <span class="ai-assist-headline">{{ currentAi.headline }}</span>
+            </div>
+            <p class="ai-assist-body">{{ currentAi.body }}</p>
+            <button class="btn btn--ai" @click="followAi">
+              {{ currentAi.action }} <ChevronRight :size="14" />
+            </button>
+          </div>
+
+          <!-- Thread header -->
+          <div class="thread-header">
+            <div class="thread-meta">
+              <div class="thread-customer-row">
+                <div class="thread-avatar" :style="{ background: activeThread.avatarColor }">
+                  {{ activeThread.name[0] }}
+                </div>
+                <div>
+                  <div class="thread-name">{{ activeThread.name }}
+                    <span class="thread-company">· {{ activeThread.company }}</span>
+                  </div>
+                  <div class="thread-id">{{ activeThread.ticketId }}</div>
+                </div>
+              </div>
+              <div class="thread-subject">{{ activeThread.subject }}</div>
+            </div>
+            <div class="thread-badges">
+              <span class="badge badge--open">Open</span>
+              <span class="badge" :class="`badge--${activeThread.priority}`">{{ activeThread.priority }}</span>
+            </div>
+          </div>
+
+          <!-- Messages -->
+          <div ref="messagesEl" class="thread-messages">
+            <TransitionGroup name="msg">
+              <div
+                v-for="msg in activeThread.messages"
+                :key="msg.id"
+                class="message"
+                :class="msg.from === 'agent' ? 'message--agent' : 'message--customer'"
+              >
+                <div v-if="msg.from === 'customer'" class="msg-avatar" :style="{ background: activeThread.avatarColor }">
+                  {{ activeThread.name[0] }}
+                </div>
+                <div class="msg-bubble">
+                  <div class="msg-header">
+                    <span class="msg-sender">{{ msg.from === 'agent' ? 'You' : activeThread.name }}</span>
+                    <span class="msg-time">{{ msg.time }}</span>
+                  </div>
+                  <div class="msg-body">{{ msg.text }}</div>
+                </div>
+                <div v-if="msg.from === 'agent'" class="msg-avatar msg-avatar--agent">Y</div>
+              </div>
+            </TransitionGroup>
+          </div>
+
+          <!-- Compose -->
+          <div class="thread-compose">
+            <textarea
+              v-model="replyText"
+              class="compose-input"
+              placeholder="Write a reply…"
+              rows="3"
+              @keydown.meta.enter="sendReply"
+            />
+            <div class="compose-actions">
+              <button class="btn btn--ghost" @click="resolve">Resolve</button>
+              <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
+                <Send :size="14" /> Send Reply
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ── Right: HUD + queue ──────────────────────────── -->
+      <!-- ── Right: Dashboard (always visible) ───────────── -->
       <div class="queue-panel">
 
         <!-- HUD -->
@@ -96,25 +174,11 @@
           </div>
         </div>
 
-        <!-- AI suggestion -->
-        <div v-if="currentAi" class="ai-card">
-          <div class="ai-card-header">
-            <div class="ai-badge">
-              <Sparkles :size="11" /> AI
-            </div>
-            <span class="ai-headline">{{ currentAi.headline }}</span>
-          </div>
-          <p class="ai-body">{{ currentAi.body }}</p>
-          <button class="btn btn--ai" @click="followAi">
-            {{ currentAi.action }} <ChevronRight :size="14" />
-          </button>
-        </div>
-
-        <!-- Waiting tickets -->
+        <!-- Queue (always visible) -->
         <div class="queue-list">
-          <div class="queue-section-label">Up next</div>
+          <div class="queue-section-label">{{ activeThread ? "Up next" : "Your queue" }}</div>
           <button
-            v-for="thread in queue"
+            v-for="thread in displayQueue"
             :key="thread.id"
             class="queue-card"
             @click="activeId = thread.id"
@@ -147,7 +211,7 @@
 </template>
 
 <script setup>
-import { ChevronRight, Clock, Send, Sparkles } from "lucide-vue-next"
+import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Send, Sparkles, Zap } from "lucide-vue-next"
 import { computed, nextTick, ref, watch } from "vue"
 
 // ── Data ────────────────────────────────────────────────
@@ -238,23 +302,114 @@ const aiSuggestions = {
 
 const DAILY_GOAL = 20
 
+const priorityOptions = [
+  { id: "urgent", label: "Urgent first", description: "Tackle high-priority tickets before they escalate", icon: Flame, color: "#f87171" },
+  { id: "waiting", label: "Longest waiting", description: "Help the customers who've been waiting the most", icon: Hourglass, color: "#fbbf24" },
+  { id: "quick", label: "Quick wins", description: "Clear straightforward tickets to build momentum", icon: Zap, color: "#34d399" },
+  { id: "queue", label: "Work the queue", description: "Go through tickets in the order they came in", icon: ListOrdered, color: "#818cf8" },
+]
+
+// ── Helpers ──────────────────────────────────────────────
+
+function parseWait(str) {
+  let mins = 0
+  const h = str.match(/(\d+)h/)
+  const m = str.match(/(\d+)m/)
+  if (h) mins += parseInt(h[1]) * 60
+  if (m) mins += parseInt(m[1])
+  return mins
+}
+
 // ── State ────────────────────────────────────────────────
 
-const activeId = ref(1)
+const activeId = ref(null)
+const chosenPriority = ref(null)
 const hudOpen = ref(14)
 const hudLongestWait = ref("2h 15m")
 const hudResolvedToday = ref(8)
 
-// Clips the gradient from the right so the visible color reflects current health level
 const barClipRight = computed(() => `${Math.max(0, 100 - (hudResolvedToday.value / DAILY_GOAL) * 100)}%`)
 const replyText = ref("")
 const messagesEl = ref(null)
 
-const activeThread = computed(() => threads.value.find((t) => t.id === activeId.value))
+const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
 const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
+const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
 const currentAi = computed(() => aiSuggestions[activeId.value] ?? null)
 
+const cardStats = computed(() => {
+  const highCount = threads.value.filter((t) => t.priority === "high").length
+  const readyCount = threads.value.filter((t) => aiSuggestions[t.id]).length
+  return {
+    urgent: { stat: `${highCount} high priority`, detail: `Longest: ${hudLongestWait.value}` },
+    waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
+    quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length - highCount} medium/low` },
+    queue: { stat: `${hudOpen.value} open`, detail: `${hudResolvedToday.value}/${DAILY_GOAL} resolved` },
+  }
+})
+
+const cardPreviews = computed(() => {
+  const priorityRank = { high: 0, medium: 1, low: 2 }
+  const all = [...threads.value]
+
+  const urgent = [...all].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
+  const waiting = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  const quick = [...all].sort((a, b) => (aiSuggestions[b.id] ? 1 : 0) - (aiSuggestions[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
+  const queue = [...all]
+
+  return {
+    urgent: urgent[0] ?? null,
+    waiting: waiting[0] ?? null,
+    quick: quick[0] ?? null,
+    queue: queue[0] ?? null,
+  }
+})
+
+const chosenOption = computed(() => priorityOptions.find((o) => o.id === chosenPriority.value) ?? null)
+
+const sortedQueue = computed(() => {
+  const priorityRank = { high: 0, medium: 1, low: 2 }
+  const all = [...threads.value]
+  const id = chosenPriority.value
+  if (id === "urgent") {
+    all.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
+  } else if (id === "waiting") {
+    all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  } else if (id === "quick") {
+    all.sort((a, b) => (aiSuggestions[b.id] ? 1 : 0) - (aiSuggestions[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
+  }
+  return all
+})
+
+const queueIndex = computed(() => sortedQueue.value.findIndex((t) => t.id === activeId.value))
+const canGoPrev = computed(() => queueIndex.value > 0)
+const canGoNext = computed(() => queueIndex.value < sortedQueue.value.length - 1)
+
+const recommendedStrategy = computed(() => {
+  const highCount = threads.value.filter((t) => t.priority === "high").length
+  if (highCount >= 2) return "urgent"
+  const maxWait = Math.max(...threads.value.map((t) => parseWait(t.wait)))
+  if (maxWait >= 120) return "waiting"
+  return "quick"
+})
+
 // ── Actions ──────────────────────────────────────────────
+
+function goPrev() {
+  if (canGoPrev.value) activeId.value = sortedQueue.value[queueIndex.value - 1].id
+}
+
+function goNext() {
+  if (canGoNext.value) activeId.value = sortedQueue.value[queueIndex.value + 1].id
+}
+
+function choosePriority(opt) {
+  chosenPriority.value = opt.id
+  const first = cardPreviews.value[opt.id]
+  if (first) {
+    activeId.value = first.id
+  }
+}
 
 function sendReply() {
   const text = replyText.value.trim()
@@ -273,10 +428,9 @@ function followAi() {
 }
 
 function resolve() {
-  // Remove the resolved ticket and advance to the next one
   const nextThread = queue.value[0]
   threads.value = threads.value.filter((t) => t.id !== activeId.value)
-  if (nextThread) activeId.value = nextThread.id
+  activeId.value = nextThread ? nextThread.id : null
   replyText.value = ""
   hudResolvedToday.value++
   hudOpen.value = Math.max(0, hudOpen.value - 1)
@@ -290,10 +444,12 @@ function scrollToBottom() {
   })
 }
 
-// Reset reply draft when switching tickets
-watch(activeId, () => {
+watch(activeId, (val) => {
   replyText.value = ""
   scrollToBottom()
+  if (val == null) {
+    chosenPriority.value = null
+  }
 })
 </script>
 
@@ -301,18 +457,17 @@ watch(activeId, () => {
 /* ── Layout ─────────────────────────────────────────────── */
 
 .go-page {
-  /* Negative margin to stretch past the page-wrap padding, filling the viewport */
   margin: -28px;
 }
 
 .go-split {
   display: flex;
-  height: calc(100dvh - 56px); /* full height minus desktop topbar */
+  height: 100dvh;
 }
 
-/* ── Thread panel (left ~70%) ───────────────────────────── */
+/* ── Workspace (left panel — always present) ───────────── */
 
-.thread-panel {
+.workspace {
   flex: 7;
   min-width: 0;
   display: flex;
@@ -320,12 +475,354 @@ watch(activeId, () => {
   border-right: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* ── Lobby state ───────────────────────────────────────── */
+
+.workspace-lobby {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: content-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes content-up {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+.lobby-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px 32px;
+}
+
+.ai-lobby-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: rgba(168, 85, 247, 0.1);
+  color: #c084fc;
+  margin-bottom: 16px;
+  box-shadow: 0 0 48px rgba(168, 85, 247, 0.14);
+}
+
+/* ── Priority cards ────────────────────────────────────── */
+
+.priority-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  width: 100%;
+  flex: 1;
+}
+
+.priority-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 20px;
+  padding: 28px 28px 24px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.priority-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 32px rgba(255, 255, 255, 0.03);
+  transform: translateY(-2px);
+}
+
+.priority-card--recommended {
+  background: rgba(168, 85, 247, 0.05);
+  border-color: rgba(168, 85, 247, 0.2);
+  box-shadow: 0 0 32px rgba(168, 85, 247, 0.06);
+}
+
+.priority-card--recommended:hover {
+  background: rgba(168, 85, 247, 0.08);
+  border-color: rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 40px rgba(168, 85, 247, 0.1);
+}
+
+.priority-rec-badge {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.12);
+  border-radius: 8px;
+  padding: 5px 10px;
+  letter-spacing: 0.03em;
+}
+
+.priority-icon {
+  margin-bottom: 10px;
+}
+
+.priority-label {
+  font-size: 26px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+}
+
+.priority-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 16px;
+}
+
+.priority-stat-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.priority-stat-detail {
+  font-size: 15px;
+  color: rgba(148, 163, 184, 0.45);
+}
+
+.priority-preview {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(148, 163, 184, 0.3);
+  margin-bottom: 8px;
+}
+
+.preview-ticket {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.025);
+  border-radius: 12px;
+  min-height: 0;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+
+.priority-card:hover .preview-ticket {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.preview-ticket-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.preview-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.preview-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.8);
+  flex: 1;
+}
+
+.preview-subject {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(226, 232, 240, 0.65);
+  line-height: 1.35;
+}
+
+.preview-summary {
+  font-size: 14px;
+  color: rgba(148, 163, 184, 0.45);
+  line-height: 1.55;
+  flex: 1;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.preview-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 5px;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.preview-badge--high {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.preview-badge--medium {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+}
+
+.preview-badge--low {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+}
+
+/* ── Strategy bar ─────────────────────────────────────── */
+
+.strategy-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.strategy-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 12px 20px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+  border-radius: 0;
+}
+
+.strategy-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.strategy-header-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.strategy-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+.strategy-nav-pos {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.45);
+  margin-right: 8px;
+}
+
+.strategy-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.strategy-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.strategy-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* ── Active state ──────────────────────────────────────── */
+
+.workspace-active {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: content-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── AI assist banner ──────────────────────────────────── */
+
+.ai-assist {
+  padding: 18px 24px;
+  background: rgba(168, 85, 247, 0.04);
+  border-bottom: 1px solid rgba(168, 85, 247, 0.12);
+  flex-shrink: 0;
+}
+
+.ai-assist-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.ai-assist-headline {
+  font-size: 17px;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1.3;
+}
+
+.ai-assist-body {
+  font-size: 15px;
+  color: rgba(148, 163, 184, 0.65);
+  line-height: 1.6;
+  margin: 0 0 4px;
+  min-height: 1.6em;
+}
+
+/* ── Thread header ─────────────────────────────────────── */
+
 .thread-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 24px;
+  padding: 18px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
@@ -333,25 +830,25 @@ watch(activeId, () => {
 .thread-customer-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 8px;
 }
 
 .thread-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
 }
 
 .thread-name {
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 600;
   color: #e2e8f0;
 }
@@ -362,13 +859,13 @@ watch(activeId, () => {
 }
 
 .thread-id {
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
-  margin-top: 1px;
+  margin-top: 2px;
 }
 
 .thread-subject {
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 600;
   color: #f1f5f9;
   letter-spacing: -0.01em;
@@ -381,10 +878,10 @@ watch(activeId, () => {
 }
 
 .badge {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 4px 10px;
+  border-radius: 7px;
   text-transform: capitalize;
 }
 
@@ -421,7 +918,7 @@ watch(activeId, () => {
 
 .message {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   align-items: flex-end;
 }
 
@@ -430,13 +927,13 @@ watch(activeId, () => {
 }
 
 .msg-avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
@@ -450,8 +947,8 @@ watch(activeId, () => {
   max-width: 72%;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 14px;
+  padding: 14px 18px;
 }
 
 .message--agent .msg-bubble {
@@ -467,18 +964,18 @@ watch(activeId, () => {
 }
 
 .msg-sender {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #94a3b8;
 }
 
 .msg-time {
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
 }
 
 .msg-body {
-  font-size: 13px;
+  font-size: 16px;
   color: #e2e8f0;
   line-height: 1.6;
 }
@@ -495,10 +992,10 @@ watch(activeId, () => {
   width: 100%;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 10px 14px;
+  border-radius: 12px;
+  padding: 14px 18px;
   color: #e2e8f0;
-  font-size: 13px;
+  font-size: 16px;
   font-family: inherit;
   resize: none;
   outline: none;
@@ -525,10 +1022,10 @@ watch(activeId, () => {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border-radius: 8px;
-  font-size: 13px;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 16px;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
@@ -567,7 +1064,7 @@ watch(activeId, () => {
   border: 1px solid rgba(168, 85, 247, 0.2);
   width: 100%;
   justify-content: center;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .btn--ai:hover {
@@ -575,7 +1072,21 @@ watch(activeId, () => {
   border-color: rgba(168, 85, 247, 0.35);
 }
 
-/* ── Queue panel (right ~30%) ───────────────────────────── */
+.ai-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #c084fc;
+  background: rgba(168, 85, 247, 0.15);
+  border-radius: 6px;
+  padding: 3px 8px;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+/* ── Queue panel (right, always visible) ───────────────── */
 
 .queue-panel {
   flex: 3;
@@ -591,7 +1102,7 @@ watch(activeId, () => {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 14px 20px;
+  padding: 18px 20px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
@@ -601,11 +1112,11 @@ watch(activeId, () => {
   flex-direction: column;
   align-items: center;
   flex: 1;
-  gap: 2px;
+  gap: 3px;
 }
 
 .hud-value {
-  font-size: 18px;
+  font-size: 24px;
   font-weight: 700;
   color: #f1f5f9;
   letter-spacing: -0.02em;
@@ -613,7 +1124,7 @@ watch(activeId, () => {
 }
 
 .hud-label {
-  font-size: 10px;
+  font-size: 12px;
   color: rgba(148, 163, 184, 0.45);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -642,7 +1153,7 @@ watch(activeId, () => {
 }
 
 .health-bar-title {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: rgba(148, 163, 184, 0.4);
   text-transform: uppercase;
@@ -661,15 +1172,12 @@ watch(activeId, () => {
   position: absolute;
   inset: 0;
   border-radius: 99px;
-  /* Red = low health (left), green = full health (right) */
   background: linear-gradient(90deg, #ef4444 0%, #f59e0b 45%, #22c55e 100%);
-  /* Clip from the right to reveal only the filled portion */
   clip-path: inset(0 v-bind(barClipRight) 0 0 round 99px);
   transition: clip-path 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
 }
 
-/* Glint that sweeps back and forth across the filled portion */
 .health-bar-bg::after {
   content: "";
   position: absolute;
@@ -685,53 +1193,6 @@ watch(activeId, () => {
   to   { background-position: 150% 0; }
 }
 
-/* ── AI card ────────────────────────────────────────────── */
-
-.ai-card {
-  margin: 14px 16px 0;
-  background: rgba(168, 85, 247, 0.06);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-  border-radius: 12px;
-  padding: 14px;
-  flex-shrink: 0;
-  /* Subtle animated glow */
-  box-shadow: 0 0 24px rgba(168, 85, 247, 0.07);
-}
-
-.ai-card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.ai-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #c084fc;
-  background: rgba(168, 85, 247, 0.15);
-  border-radius: 5px;
-  padding: 2px 6px;
-  letter-spacing: 0.04em;
-  flex-shrink: 0;
-}
-
-.ai-headline {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e2e8f0;
-  line-height: 1.3;
-}
-
-.ai-body {
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.7);
-  line-height: 1.6;
-}
-
 /* ── Queue cards ────────────────────────────────────────── */
 
 .queue-list {
@@ -739,10 +1200,11 @@ watch(activeId, () => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
 }
 
 .queue-section-label {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: rgba(148, 163, 184, 0.35);
   text-transform: uppercase;
@@ -754,8 +1216,8 @@ watch(activeId, () => {
   width: 100%;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  padding: 12px;
+  border-radius: 12px;
+  padding: 14px;
   cursor: pointer;
   text-align: left;
   font-family: inherit;
@@ -775,13 +1237,13 @@ watch(activeId, () => {
 }
 
 .qcard-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
@@ -793,7 +1255,7 @@ watch(activeId, () => {
 }
 
 .qcard-name {
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 600;
   color: #e2e8f0;
 }
@@ -804,7 +1266,7 @@ watch(activeId, () => {
 }
 
 .qcard-subject {
-  font-size: 12px;
+  font-size: 14px;
   color: rgba(148, 163, 184, 0.6);
   margin-top: 2px;
   white-space: nowrap;
@@ -822,15 +1284,15 @@ watch(activeId, () => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
 }
 
 .qcard-priority {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 5px;
   text-transform: capitalize;
 }
 
@@ -872,11 +1334,22 @@ watch(activeId, () => {
     height: auto;
   }
 
-  .thread-panel {
+  .workspace-active {
     border-right: none;
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    /* Give the thread panel a fixed height on mobile so it doesn't push queue off screen */
     height: 65dvh;
+  }
+
+  .workspace-lobby {
+    min-height: 50dvh;
+  }
+
+  .lobby-content {
+    padding: 24px 20px;
+  }
+
+  .priority-grid {
+    grid-template-columns: 1fr;
   }
 
   .queue-panel {
