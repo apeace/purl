@@ -1,0 +1,4 @@
+.env
+# compiled binaries
+api
+server
