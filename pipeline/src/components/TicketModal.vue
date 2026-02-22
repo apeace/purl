@@ -56,8 +56,8 @@ onUnmounted(() => {
 .modal-panel {
   position: relative;
   width: 100%;
-  max-width: 720px;
-  max-height: 85vh;
+  max-width: 860px;
+  height: 85vh;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
@@ -77,8 +77,8 @@ onUnmounted(() => {
 
 .modal-close {
   position: absolute;
-  top: 14px;
-  right: 16px;
+  top: 12px;
+  right: 12px;
   z-index: 10;
   width: 32px;
   height: 32px;

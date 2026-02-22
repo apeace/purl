@@ -454,6 +454,7 @@ watch(() => props.ticketId, () => {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  padding-right: 36px;
 }
 
 .badge {
