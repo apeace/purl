@@ -19,7 +19,7 @@
       </div>
     </div>
     <div class="stages-scroll">
-      <PipelineStage
+      <KanbanStage
         v-for="(stage, i) in stages"
         :key="stage.title"
         v-bind="stage"
@@ -94,7 +94,7 @@
 import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import FilterPanel from "../components/FilterPanel.vue"
-import PipelineStage from "../components/PipelineStage.vue"
+import KanbanStage from "../components/KanbanStage.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useTickets } from "../composables/useTickets.js"
 import { STATUS_COLORS } from "../utils/colors.js"

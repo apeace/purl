@@ -1,13 +1,13 @@
-# Pipeline
+# Purl
 
 Support ticketing that doesn't make you want to close the tab.
 
-Pipeline is a modern support ticketing system built for teams who are tired of Zendesk. Fast, beautiful, and actually pleasant to use.
+Purl is a modern support ticketing system built for teams who are tired of Zendesk. Fast, beautiful, and actually pleasant to use.
 
 ## Features
 
 - **Inbox** — unified ticket queue with smart prioritization
-- **Pipeline** — kanban-style view of the same tickets; Inbox and Pipeline are two lenses on the same data, so a ticket always appears in both
+- **Kanban** — kanban-style view of the same tickets; Inbox and Kanban are two lenses on the same data, so a ticket always appears in both
 - **Dashboard** — real-time metrics on volume, response times, and team performance
 - **Reporting** — the charts your manager actually wants to see
 
@@ -15,7 +15,7 @@ Pipeline is a modern support ticketing system built for teams who are tired of Z
 
 ```bash
 npm install
-npm run dev -w pipeline
+npm run dev -w purl
 ```
 
 ## Project Structure
@@ -24,7 +24,7 @@ This is an NPM workspaces monorepo.
 
 | Workspace | Description |
 |-----------|-------------|
-| `pipeline/` | Main frontend app (Vue 3 + Vite) |
+| `purl/` | Main frontend app (Vue 3 + Vite) |
 | `lib/` | Shared packages |
 
 ## Tech Stack

@@ -23,7 +23,7 @@ function submit() {
     <div class="card">
       <div class="logo">
         <span class="logo-mark">P</span>
-        <span class="logo-name">Pipeline</span>
+        <span class="logo-name">Purl</span>
       </div>
 
       <h1 class="title">Enter your API key</h1>
