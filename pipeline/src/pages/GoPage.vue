@@ -90,15 +90,7 @@
           </div>
         </div>
 
-        <!-- Health bar -->
-        <div class="health-bar-wrap">
-          <div class="health-bar-labels">
-            <span class="health-bar-title">Shift Health</span>
-          </div>
-          <div class="health-bar-track">
-            <div class="health-bar-bg" />
-          </div>
-        </div>
+        <ShiftHealth />
 
         <!-- Queue (always visible) -->
         <div class="queue-list">
@@ -139,6 +131,7 @@
 <script setup>
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { computed, onMounted, ref, watch } from "vue"
+import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useTickets } from "../composables/useTickets.js"
 
@@ -169,8 +162,6 @@ const priorityOptions = [
 
 const activeId = ref(null)
 const chosenPriority = ref(null)
-
-const barClipRight = computed(() => `${Math.max(0, 100 - (hudResolvedToday.value / DAILY_GOAL) * 100)}%`)
 
 const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
 const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
@@ -644,62 +635,6 @@ watch(activeId, (val) => {
   width: 1px;
   height: 28px;
   background: rgba(255, 255, 255, 0.06);
-}
-
-/* ── Health bar ─────────────────────────────────────────── */
-
-.health-bar-wrap {
-  padding: 10px 20px 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  flex-shrink: 0;
-}
-
-.health-bar-labels {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 7px;
-}
-
-.health-bar-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(148, 163, 184, 0.4);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.health-bar-track {
-  position: relative;
-  height: 7px;
-  border-radius: 99px;
-  background: rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-}
-
-.health-bar-bg {
-  position: absolute;
-  inset: 0;
-  border-radius: 99px;
-  background: linear-gradient(90deg, #ef4444 0%, #f59e0b 45%, #22c55e 100%);
-  clip-path: inset(0 v-bind(barClipRight) 0 0 round 99px);
-  transition: clip-path 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  overflow: hidden;
-}
-
-.health-bar-bg::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 20%, rgba(255, 255, 255, 0.22) 50%, transparent 80%);
-  background-size: 50% 100%;
-  background-repeat: no-repeat;
-  animation: bar-shimmer 2s ease-in-out infinite alternate;
-}
-
-@keyframes bar-shimmer {
-  from { background-position: -50% 0; }
-  to   { background-position: 150% 0; }
 }
 
 /* ── Queue cards ────────────────────────────────────────── */
