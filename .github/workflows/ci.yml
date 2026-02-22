@@ -19,6 +19,12 @@ jobs:
           go-version-file: api/go.mod
           cache: true
 
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate docs
+        run: swag init --dir . --output docs
+
       - run: go build ./...
       - run: go vet ./...
 

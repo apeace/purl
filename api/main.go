@@ -16,6 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/redis/go-redis/v9"
+	httpSwagger "github.com/swaggo/http-swagger"
+	_ "purl/api/docs"
 )
 
 //go:embed migrations/*.sql
@@ -56,6 +58,13 @@ type app struct {
 	cfg   config
 }
 
+// @title           Purl API
+// @version         1.0
+// @description     API for Purl.
+// @host            localhost:9090
+// @securityDefinitions.apikey ApiKeyAuth
+// @in              header
+// @name            x-api-key
 func main() {
 	cfg := loadConfig()
 
@@ -96,6 +105,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
+	r.Get("/docs/*", httpSwagger.Handler())
 	r.Get("/health", a.health)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -173,6 +183,13 @@ type orgResponse struct {
 	Name string `json:"name"`
 }
 
+// @Summary     Get current organization
+// @Description Returns the organization associated with the provided API key
+// @Produce     json
+// @Success     200  {object}  orgResponse
+// @Failure     401  {string}  string  "Unauthorized"
+// @Security    ApiKeyAuth
+// @Router      /org [get]
 func (a *app) getOrg(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	w.Header().Set("Content-Type", "application/json")
@@ -189,6 +206,13 @@ type ticketRow struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+// @Summary     List tickets
+// @Description Returns all tickets for the org, ordered by creation date descending
+// @Produce     json
+// @Success     200  {array}   ticketRow
+// @Failure     401  {string}  string  "Unauthorized"
+// @Security    ApiKeyAuth
+// @Router      /tickets [get]
 func (a *app) listTickets(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	rows, err := a.db.QueryContext(r.Context(), `
@@ -220,6 +244,12 @@ func (a *app) listTickets(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(tickets)
 }
 
+// @Summary     Health check
+// @Description Returns health status of the API and its dependencies
+// @Produce     json
+// @Success     200  {object}  map[string]any
+// @Failure     503  {object}  map[string]any
+// @Router      /health [get]
 func (a *app) health(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

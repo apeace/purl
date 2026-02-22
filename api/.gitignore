@@ -4,3 +4,5 @@ api
 server
 # air live-reload output
 tmp/
+# generated swagger docs
+docs/
