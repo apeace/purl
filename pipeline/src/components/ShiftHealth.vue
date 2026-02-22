@@ -32,25 +32,14 @@
 </template>
 
 <script setup>
-// ── Shift Health ────────────────────────────────────────
+// Shift Health — weighted composite of four operational dimensions.
+// Score = (0.30 × Backlog) + (0.30 × Clearance) + (0.25 × Response) + (0.15 × Efficiency)
 //
-// Composite score = (0.30 × Backlog) + (0.30 × Clearance) + (0.25 × Response) + (0.15 × Efficiency)
-//
-// Backlog Score:    max(0, 100 × (1 − openTickets / (threshold × 2)))
-//                   threshold = agentsOnShift × acceptablePerAgent
-//                   Measures how full the queue is relative to capacity.
-//
-// Clearance Score:  min(100, (resolvedToday / ticketsOpenedToday) × 100)
-//                   Are we resolving at least as fast as tickets come in?
-//
-// Response Score:   If avgFRT ≤ goal → 100
-//                   Else max(0, 100 × (1 − (avgFRT − goal) / goal))
-//                   Linear decay once first-response time exceeds the goal.
-//
-// Efficiency Score: FCR rate (first-contact resolution %)
-//                   Higher = fewer follow-ups needed.
-//
-// Status tiers: 90–100 Excellent, 75–89 Good, 60–74 Fair, 40–59 At Risk, 0–39 Critical
+// Backlog:    max(0, 100 × (1 − open / (threshold × 2))),  threshold = agents × acceptable
+// Clearance:  min(100, (resolved / opened) × 100)
+// Response:   100 if FRT ≤ goal, else linear decay to 0 at 2× goal
+// Efficiency: FCR rate directly
+// Tiers: 90+ Excellent, 75+ Good, 60+ Fair, 40+ At Risk, <40 Critical
 
 import { ChevronDown, TrendingDown, TrendingUp } from "lucide-vue-next"
 import { computed, ref, watch } from "vue"
@@ -61,7 +50,7 @@ const { hudOpen, hudResolvedToday } = useTickets()
 const AGENTS_ON_SHIFT = 2
 const ACCEPTABLE_PER_AGENT = 15
 const FRT_GOAL_MINS = 60
-// Simulated shift inputs (in production these come from live telemetry)
+// Simulated — in production these come from live telemetry
 const AVG_FRT_MINS = 45
 const TICKETS_OPENED_TODAY = 25
 const FCR_RATE = 78
@@ -93,18 +82,12 @@ const healthScore = computed(() =>
 
 const expanded = ref(false)
 
-// Track trend by comparing current score to the previous value
-const prevScore = ref(null)
 const trendUp = ref(true)
 
 watch(healthScore, (curr, old) => {
-  if (old != null) {
-    prevScore.value = old
-    trendUp.value = curr >= old
-  }
+  if (old != null) trendUp.value = curr >= old
 }, { immediate: true })
 
-// Main bar color — uses red/amber/green spectrum
 const healthColor = computed(() => {
   const s = healthScore.value
   if (s >= 90) return "#34d399"
@@ -119,7 +102,6 @@ const healthGradient = computed(() => {
   return `linear-gradient(90deg, ${c}88, ${c})`
 })
 
-// Component bar colors — distinct from the main bar's red/amber/green palette
 const healthComponents = computed(() => [
   { label: "Backlog", score: backlogScore.value, color: "#818cf8" },
   { label: "Clearance", score: clearanceScore.value, color: "#38bdf8" },

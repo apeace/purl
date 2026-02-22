@@ -41,6 +41,7 @@ import FilterPanel from "../components/FilterPanel.vue"
 import PipelineStage from "../components/PipelineStage.vue"
 import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
+import { STATUS_COLORS } from "../utils/colors.js"
 
 const { filteredTickets, setStatus } = useTickets()
 
@@ -54,12 +55,12 @@ function onDrop({ ticketId, status }) {
 }
 
 const stageDefs = [
-  { status: "new", title: "New", color: "#38bdf8" },
-  { status: "open", title: "Open", color: "#60a5fa" },
-  { status: "pending", title: "Pending", color: "#a855f7" },
-  { status: "escalated", title: "Technical Escalation", color: "#f97316" },
-  { status: "solved", title: "Solved", color: "#34d399" },
-  { status: "closed", title: "Closed", color: "#94a3b8" },
+  { status: "new", title: "New", color: STATUS_COLORS.new },
+  { status: "open", title: "Open", color: STATUS_COLORS.open },
+  { status: "pending", title: "Pending", color: STATUS_COLORS.pending },
+  { status: "escalated", title: "Technical Escalation", color: STATUS_COLORS.escalated },
+  { status: "solved", title: "Solved", color: STATUS_COLORS.solved },
+  { status: "closed", title: "Closed", color: STATUS_COLORS.closed },
 ]
 
 const stages = computed(() => {

@@ -254,6 +254,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
 import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
+import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors.js"
 
 const {
   archiveTicket,
@@ -274,21 +275,8 @@ const activeTab = ref("all")
 
 // ── Filter / sort data ───────────────────────────────────
 
-const priorities = [
-  { value: "urgent", label: "Urgent", color: "#ef4444" },
-  { value: "high", label: "High", color: "#f97316" },
-  { value: "medium", label: "Medium", color: "#f59e0b" },
-  { value: "low", label: "Low", color: "#34d399" },
-]
-
-const statuses = [
-  { value: "new", label: "New", color: "#38bdf8" },
-  { value: "open", label: "Open", color: "#60a5fa" },
-  { value: "pending", label: "Pending", color: "#a855f7" },
-  { value: "escalated", label: "Escalated", color: "#f97316" },
-  { value: "solved", label: "Solved", color: "#34d399" },
-  { value: "closed", label: "Closed", color: "#94a3b8" },
-]
+const priorities = PRIORITY_LIST
+const statuses = STATUS_LIST
 
 const sortOptions = [
   { value: "time", label: "Last Updated" },
@@ -324,23 +312,8 @@ function onPointerDown(e) {
 onMounted(() => document.addEventListener("pointerdown", onPointerDown))
 onBeforeUnmount(() => document.removeEventListener("pointerdown", onPointerDown))
 
-// ── Row color maps ───────────────────────────────────────
-
-const priorityColors = {
-  urgent: "#ef4444",
-  high: "#f97316",
-  medium: "#f59e0b",
-  low: "#34d399",
-}
-
-const statusColors = {
-  new: { bg: "rgba(56, 189, 248, 0.12)", text: "#38bdf8" },
-  open: { bg: "rgba(96, 165, 250, 0.12)", text: "#60a5fa" },
-  pending: { bg: "rgba(168, 85, 247, 0.12)", text: "#a855f7" },
-  escalated: { bg: "rgba(249, 115, 22, 0.12)", text: "#f97316" },
-  solved: { bg: "rgba(52, 211, 153, 0.12)", text: "#34d399" },
-  closed: { bg: "rgba(148, 163, 184, 0.12)", text: "#94a3b8" },
-}
+const priorityColors = PRIORITY_COLORS
+const statusColors = STATUS_PILL
 
 function timeColor(createdAt) {
   const mins = (Date.now() - new Date(createdAt).getTime()) / 60000
@@ -497,7 +470,8 @@ function refresh() {
   transition: background 0.15s, color 0.15s;
 }
 
-.toolbar-btn:hover:not(:disabled) {
+.toolbar-btn:hover:not(:disabled),
+.toolbar-btn:active:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
   color: #94a3b8;
 }
@@ -684,7 +658,8 @@ function refresh() {
   position: relative;
 }
 
-.email-row:hover {
+.email-row:hover,
+.email-row:active {
   background: rgba(255, 255, 255, 0.03);
 }
 
@@ -721,8 +696,8 @@ function refresh() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 36px;
+  height: 36px;
   border: none;
   background: transparent;
   color: rgba(148, 163, 184, 0.25);
@@ -730,9 +705,11 @@ function refresh() {
   transition: color 0.15s, transform 0.15s;
   border-radius: 4px;
   flex-shrink: 0;
+  margin: -6px;
 }
 
-.star-btn:hover {
+.star-btn:hover,
+.star-btn:active {
   color: #f59e0b;
   transform: scale(1.15);
 }

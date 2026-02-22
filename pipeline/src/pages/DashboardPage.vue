@@ -113,13 +113,13 @@ import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
 import StatCard from "../components/StatCard.vue"
 import { useTickets } from "../composables/useTickets.js"
+import { PRIORITY_COLORS } from "../utils/colors.js"
 
 const { hudOpen, hudResolvedToday, tickets } = useTickets()
 
 const hour = new Date().getHours()
 const greeting = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"
 
-// Sparkline from live open ticket counts (simulated trailing data + current)
 const openSparkline = computed(() => {
   const current = hudOpen.value
   return [current + 4, current + 3, current + 5, current + 2, current + 3, current + 1, current + 2, current, current + 1, current - 1, current, current]
@@ -139,10 +139,10 @@ const priorityBreakdown = computed(() => {
     if (counts[t.priority] !== undefined) counts[t.priority]++
   }
   return [
-    { label: "Urgent", count: counts.urgent, pct: Math.round((counts.urgent / total) * 100), color: "#ef4444" },
-    { label: "High", count: counts.high, pct: Math.round((counts.high / total) * 100), color: "#f97316" },
-    { label: "Medium", count: counts.medium, pct: Math.round((counts.medium / total) * 100), color: "#f59e0b" },
-    { label: "Low", count: counts.low, pct: Math.round((counts.low / total) * 100), color: "#34d399" },
+    { label: "Urgent", count: counts.urgent, pct: Math.round((counts.urgent / total) * 100), color: PRIORITY_COLORS.urgent },
+    { label: "High", count: counts.high, pct: Math.round((counts.high / total) * 100), color: PRIORITY_COLORS.high },
+    { label: "Medium", count: counts.medium, pct: Math.round((counts.medium / total) * 100), color: PRIORITY_COLORS.medium },
+    { label: "Low", count: counts.low, pct: Math.round((counts.low / total) * 100), color: PRIORITY_COLORS.low },
   ]
 })
 

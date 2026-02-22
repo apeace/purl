@@ -338,7 +338,8 @@ watch(activeId, (val) => {
   flex-direction: column;
 }
 
-.priority-card:hover {
+.priority-card:hover,
+.priority-card:active {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.12);
   box-shadow: 0 0 32px rgba(255, 255, 255, 0.03);
@@ -351,7 +352,8 @@ watch(activeId, (val) => {
   box-shadow: 0 0 32px rgba(168, 85, 247, 0.06);
 }
 
-.priority-card--recommended:hover {
+.priority-card--recommended:hover,
+.priority-card--recommended:active {
   background: rgba(168, 85, 247, 0.08);
   border-color: rgba(168, 85, 247, 0.3);
   box-shadow: 0 0 40px rgba(168, 85, 247, 0.1);
@@ -668,7 +670,8 @@ watch(activeId, (val) => {
   transition: background 0.15s, border-color 0.15s;
 }
 
-.queue-card:hover {
+.queue-card:hover,
+.queue-card:active {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
 }

@@ -160,6 +160,7 @@
 import { Activity, AlertTriangle, BookOpen, Clock, Heart, ShieldCheck, Users } from "lucide-vue-next"
 import { computed, ref } from "vue"
 import { useTickets } from "../composables/useTickets.js"
+import { STATUS_COLORS } from "../utils/colors.js"
 
 const { tickets } = useTickets()
 
@@ -225,10 +226,10 @@ const donutTotal = computed(() =>
 const donutSegments = computed(() => {
   const total = donutTotal.value || 1
   const items = [
-    { label: "New", count: statusCounts.value.new, color: "#38bdf8" },
-    { label: "Open", count: statusCounts.value.open, color: "#60a5fa" },
-    { label: "Pending", count: statusCounts.value.pending, color: "#a855f7" },
-    { label: "Escalated", count: statusCounts.value.escalated, color: "#f97316" },
+    { label: "New", count: statusCounts.value.new, color: STATUS_COLORS.new },
+    { label: "Open", count: statusCounts.value.open, color: STATUS_COLORS.open },
+    { label: "Pending", count: statusCounts.value.pending, color: STATUS_COLORS.pending },
+    { label: "Escalated", count: statusCounts.value.escalated, color: STATUS_COLORS.escalated },
   ]
   let offset = 0
   return items.map((item) => {
