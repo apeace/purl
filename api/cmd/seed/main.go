@@ -10,17 +10,28 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-var users = []struct{ email, name string }{
-	{"alice@example.com", "Alice Chen"},
-	{"bob@example.com", "Bob Harris"},
-	{"carol@example.com", "Carol Singh"},
-	{"dan@example.com", "Dan Okafor"},
-	{"eve@example.com", "Eve Nakamura"},
-	{"frank@example.com", "Frank Torres"},
-	{"grace@example.com", "Grace Müller"},
-	{"henry@example.com", "Henry Park"},
-	{"isla@example.com", "Isla Rivera"},
-	{"james@example.com", "James Kowalski"},
+var customerData = []struct {
+	name   string
+	emails []string
+	phones []string
+}{
+	{"Alice Chen", []string{"alice@example.com"}, []string{"555-0101"}},
+	{"Bob Harris", []string{"bob@example.com", "bobby.h@gmail.com"}, []string{"555-0102"}},
+	{"Carol Singh", []string{"carol@example.com"}, []string{"555-0103", "555-0203"}},
+	{"Dan Okafor", []string{"dan@example.com", "dan.o@work.com"}, []string{"555-0104"}},
+	{"Eve Nakamura", []string{"eve@example.com"}, []string{"555-0105"}},
+	{"Frank Torres", []string{"frank@example.com"}, []string{"555-0106", "555-0206"}},
+	{"Grace Müller", []string{"grace@example.com"}, []string{"555-0107"}},
+	{"Henry Park", []string{"henry@example.com"}, []string{"555-0108"}},
+	{"Isla Rivera", []string{"isla@example.com", "isla.r@gmail.com"}, []string{"555-0109"}},
+	{"James Kowalski", []string{"james@example.com"}, []string{"555-0110"}},
+}
+
+var agentData = []struct{ email, name string }{
+	{"sarah.support@brightwave.com", "Sarah Mitchell"},
+	{"tom.tech@brightwave.com", "Tom Bradley"},
+	{"lisa.billing@brightwave.com", "Lisa Nguyen"},
+	{"mike.network@brightwave.com", "Mike Osei"},
 }
 
 var titles = []string{
@@ -83,7 +94,18 @@ var priorities = []string{
 	"urgent",
 }
 
-var commentBodies = []string{
+var customerCommentBodies = []string{
+	"Still experiencing this issue. Please advise.",
+	"I rebooted the modem again — no change.",
+	"This is really affecting my work-from-home setup.",
+	"When can I expect this to be resolved?",
+	"I've been a customer for 5 years and never had this problem before.",
+	"The issue came back after your tech left.",
+	"I ran another speed test just now — still well below plan speed.",
+	"Can someone call me back instead? I'm having trouble with the chat.",
+}
+
+var agentCommentBodies = []string{
 	"Confirmed the issue on our end. Escalating to the network team.",
 	"Checked the line diagnostics — seeing elevated signal noise.",
 	"Scheduled a technician visit for the next available slot.",
@@ -91,14 +113,11 @@ var commentBodies = []string{
 	"Applied a credit for the days of degraded service.",
 	"This appears to be related to the area outage reported yesterday.",
 	"Billing adjustment processed — should reflect on next statement.",
-	"Reached out to the customer for more details on the affected devices.",
 	"Modem logs reviewed — firmware update is recommended.",
 	"Issue reproduced on our monitoring tools. Ticket forwarded to NOC.",
 	"Customer confirmed service restored after the node replacement.",
 	"Still investigating — provisioning team has been looped in.",
-	"Duplicate of another open ticket for this address. Merging.",
 	"Plan change is now active. Speed increase should be immediate.",
-	"Advised customer to use 5 GHz band to avoid congestion.",
 }
 
 const seedAPIKey = "deadbeef000000000000000000000001cafebabe000000000000000000000002"
@@ -146,30 +165,67 @@ func main() {
 	}
 	log.Printf("inserted org (api_key: %s)", seedAPIKey)
 
-	// Users
-	userIDs := make([]string, 0, len(users))
-	for _, u := range users {
+	// Customers
+	customerIDs := make([]string, 0, len(customerData))
+	for _, c := range customerData {
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO users (email, name, org_id) VALUES ($1, $2, $3) RETURNING id`,
-			u.email, u.name, orgID,
+			`INSERT INTO customers (name, org_id) VALUES ($1, $2) RETURNING id`,
+			c.name, orgID,
 		).Scan(&id)
 		if err != nil {
-			log.Fatalf("insert user %s: %v", u.email, err)
+			log.Fatalf("insert customer %s: %v", c.name, err)
 		}
-		userIDs = append(userIDs, id)
+		customerIDs = append(customerIDs, id)
+
+		// Emails: first is verified, additional ones are not
+		for i, email := range c.emails {
+			_, err := db.Exec(
+				`INSERT INTO customer_emails (customer_id, email, verified) VALUES ($1, $2, $3)`,
+				id, email, i == 0,
+			)
+			if err != nil {
+				log.Fatalf("insert customer email %s: %v", email, err)
+			}
+		}
+
+		// Phones: first is verified, additional ones are not
+		for i, phone := range c.phones {
+			_, err := db.Exec(
+				`INSERT INTO customer_phones (customer_id, phone, verified) VALUES ($1, $2, $3)`,
+				id, phone, i == 0,
+			)
+			if err != nil {
+				log.Fatalf("insert customer phone %s: %v", phone, err)
+			}
+		}
 	}
-	log.Printf("inserted %d users", len(userIDs))
+	log.Printf("inserted %d customers", len(customerIDs))
+
+	// Agents
+	agentIDs := make([]string, 0, len(agentData))
+	for _, a := range agentData {
+		var id string
+		err := db.QueryRow(
+			`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3) RETURNING id`,
+			a.email, a.name, orgID,
+		).Scan(&id)
+		if err != nil {
+			log.Fatalf("insert agent %s: %v", a.email, err)
+		}
+		agentIDs = append(agentIDs, id)
+	}
+	log.Printf("inserted %d agents", len(agentIDs))
 
 	// Tickets
 	ticketIDs := make([]string, 0, 50)
 	for range 50 {
-		reporterID := userIDs[rand.Intn(len(userIDs))]
+		reporterID := customerIDs[rand.Intn(len(customerIDs))]
 
 		// ~30% of tickets are unassigned
 		var assigneeID *string
 		if rand.Float32() > 0.3 {
-			id := userIDs[rand.Intn(len(userIDs))]
+			id := agentIDs[rand.Intn(len(agentIDs))]
 			assigneeID = &id
 		}
 
@@ -193,15 +249,36 @@ func main() {
 	}
 	log.Printf("inserted %d tickets", len(ticketIDs))
 
-	// Comments: 3–5 per ticket
+	// Comments: 3–5 per ticket, mix of customer and agent authors
 	commentCount := 0
 	for _, ticketID := range ticketIDs {
 		n := 3 + rand.Intn(3)
 		for range n {
-			authorID := userIDs[rand.Intn(len(userIDs))]
+			var customerAuthorID *string
+			var agentAuthorID *string
+			var role string
+
+			if rand.Float32() < 0.4 {
+				// Agent comment
+				id := agentIDs[rand.Intn(len(agentIDs))]
+				agentAuthorID = &id
+				role = "agent"
+			} else {
+				// Customer comment
+				id := customerIDs[rand.Intn(len(customerIDs))]
+				customerAuthorID = &id
+				role = "customer"
+			}
+
+			body := pick(customerCommentBodies)
+			if role == "agent" {
+				body = pick(agentCommentBodies)
+			}
+
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, author_id, body) VALUES ($1, $2, $3)`,
-				ticketID, authorID, pick(commentBodies),
+				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body)
+				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
+				ticketID, customerAuthorID, agentAuthorID, role, body,
 			)
 			if err != nil {
 				log.Fatalf("insert comment: %v", err)
