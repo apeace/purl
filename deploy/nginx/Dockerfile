@@ -7,6 +7,7 @@ COPY purl/package.json ./purl/
 RUN npm ci
 COPY lib/ ./lib/
 COPY purl/ ./purl/
+ENV VITE_API_URL=https://api.justpurl.com
 RUN npm run build -w @purl/purl
 
 FROM nginx:alpine
