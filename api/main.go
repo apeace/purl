@@ -227,5 +227,6 @@ func (a *app) health(w http.ResponseWriter, r *http.Request) {
 		"status":   status,
 		"postgres": dbOK,
 		"redis":    redisOK,
+		"foo":      "bar",
 	})
 }
