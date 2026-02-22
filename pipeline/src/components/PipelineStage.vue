@@ -11,6 +11,7 @@
         :key="i"
         class="deal-card"
         :style="{ '--accent': color }"
+        @click="emit('select', item.id)"
       >
         <div class="deal-top">
           <div class="deal-avatar" :style="{ background: item.avatarColor }">{{ item.name[0] }}</div>
@@ -38,6 +39,8 @@ const props = defineProps({
   items: Array,
   delay: { type: Number, default: 0 },
 })
+
+const emit = defineEmits(["select"])
 
 const visible = ref(false)
 

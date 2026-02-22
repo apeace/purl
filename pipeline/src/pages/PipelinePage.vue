@@ -9,17 +9,22 @@
         :key="stage.title"
         v-bind="stage"
         :delay="150 + i * 100"
+        @select="selectedTicketId = $event"
       />
     </div>
+    <TicketModal :ticket-id="selectedTicketId" @close="selectedTicketId = null" />
   </div>
 </template>
 
 <script setup>
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import PipelineStage from "../components/PipelineStage.vue"
+import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
 
 const { tickets } = useTickets()
+
+const selectedTicketId = ref(null)
 
 const stageDefs = [
   { status: "new", title: "New", color: "#38bdf8" },
@@ -38,6 +43,7 @@ const stages = computed(() =>
       count: items.length,
       color: def.color,
       items: items.map((t) => ({
+        id: t.id,
         name: t.name,
         company: t.company,
         subject: t.subject,

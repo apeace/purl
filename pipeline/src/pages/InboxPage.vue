@@ -103,12 +103,14 @@
       </TransitionGroup>
     </div>
 
+    <TicketModal :ticket-id="selectedTicketId" @close="selectedTicketId = null" />
   </div>
 </template>
 
 <script setup>
 import { Archive, ChevronLeft, ChevronRight, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { computed, reactive, ref } from "vue"
+import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
 
 const {
@@ -175,8 +177,11 @@ function markReadSelected() {
 
 // ── Row actions ───────────────────────────────────────────
 
+const selectedTicketId = ref(null)
+
 function openEmail(email) {
   markRead(email.id)
+  selectedTicketId.value = email.id
 }
 
 function handleToggleStar(email) {
