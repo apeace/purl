@@ -226,6 +226,6 @@ func (a *app) health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"status":   status,
 		"postgres": dbOK,
-		"redis":    redisOK
+		"redis":    redisOK,
 	})
 }
