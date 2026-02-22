@@ -29,10 +29,18 @@ type config struct {
 
 func loadConfig() config {
 	return config{
-		DatabaseURL: getEnv("DATABASE_URL", "postgres://pipeline:pipeline@localhost:5433/pipeline?sslmode=disable"),
-		RedisURL:    getEnv("REDIS_URL", "redis://localhost:6380"),
+		DatabaseURL: requireEnv("DATABASE_URL"),
+		RedisURL:    requireEnv("REDIS_URL"),
 		Port:        getEnv("PORT", "9090"),
 	}
+}
+
+func requireEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		log.Fatalf("%s environment variable is required", key)
+	}
+	return v
 }
 
 func getEnv(key, fallback string) string {
