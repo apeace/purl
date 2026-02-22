@@ -28,6 +28,9 @@ func (a *App) Handler() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(corsMiddleware)
 
+	r.Get("/docs", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/docs/index.html", http.StatusMovedPermanently)
+	})
 	r.Get("/docs/*", httpSwagger.Handler())
 	r.Get("/health", a.health)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
