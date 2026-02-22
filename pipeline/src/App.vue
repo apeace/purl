@@ -1,7 +1,5 @@
 <template>
-  <AppLayout>
-    <RouterView />
-  </AppLayout>
+  <AppLayout />
 </template>
 
 <script setup>

@@ -62,7 +62,7 @@
           :to="item.path"
           class="nav-item"
           active-class="nav-item--active"
-          @click="open = false"
+          @click="onNavClick(item.path)"
         >
           <component :is="item.icon" :size="18" class="nav-icon" />
           <span class="nav-label">{{ item.label }}</span>
@@ -74,7 +74,7 @@
           to="/settings"
           class="nav-item"
           active-class="nav-item--active"
-          @click="open = false"
+          @click="onNavClick('/settings')"
         >
           <Settings :size="18" class="nav-icon" />
           <span class="nav-label">Settings</span>
@@ -133,7 +133,7 @@
       </div>
 
       <div class="page-wrap">
-        <slot />
+        <RouterView :key="navResetKey" />
       </div>
     </main>
   </div>
@@ -165,6 +165,15 @@ const cmdItems = [
 ]
 
 const route = useRoute()
+
+const navResetKey = ref(0)
+
+function onNavClick(path) {
+  open.value = false
+  if (route.path === path) {
+    navResetKey.value++
+  }
+}
 
 const pageLabel = computed(() => {
   const seg = route.path.split("/").filter(Boolean)[0] || "dashboard"
