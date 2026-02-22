@@ -1,4 +1,4 @@
-module pipeline/api
+module purl/api
 
 go 1.25
 

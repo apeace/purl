@@ -1,6 +1,6 @@
 # API
 
-Go backend for Pipeline.
+Go backend for Purl.
 
 ## Running
 
