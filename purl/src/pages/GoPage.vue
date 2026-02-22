@@ -169,7 +169,7 @@ const displayQueue = computed(() => activeThread.value ? queue.value : threads.v
 
 const cardStats = computed(() => {
   const highCount = threads.value.filter((t) => t.priority === "high").length
-  const readyCount = threads.value.filter((t) => aiSuggestions[t.id]).length
+  const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
     urgent: { stat: `${highCount} high priority`, detail: `Longest: ${hudLongestWait.value}` },
     waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
@@ -184,7 +184,7 @@ const cardPreviews = computed(() => {
 
   const urgent = [...all].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
   const waiting = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
-  const quick = [...all].sort((a, b) => (aiSuggestions[b.id] ? 1 : 0) - (aiSuggestions[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
+  const quick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
   const queueSorted = [...all]
 
   return {
@@ -206,7 +206,7 @@ const sortedQueue = computed(() => {
   } else if (id === "waiting") {
     all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
   } else if (id === "quick") {
-    all.sort((a, b) => (aiSuggestions[b.id] ? 1 : 0) - (aiSuggestions[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
+    all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
   }
   return all
 })

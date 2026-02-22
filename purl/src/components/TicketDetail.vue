@@ -1,19 +1,5 @@
 <template>
   <div class="ticket-detail">
-    <!-- AI assist banner -->
-    <div v-if="currentAi" class="ai-assist">
-      <div class="ai-assist-top">
-        <div class="ai-badge">
-          <Sparkles :size="11" /> AI
-        </div>
-        <span class="ai-assist-headline">{{ currentAi.headline }}</span>
-      </div>
-      <p class="ai-assist-body">{{ currentAi.body }}</p>
-      <button class="btn btn--ai" @click="followAi">
-        {{ currentAi.action }} <ChevronRight :size="14" />
-      </button>
-    </div>
-
     <!-- Thread header -->
     <div class="thread-header">
       <div class="thread-meta">
@@ -81,21 +67,6 @@
         </TransitionGroup>
       </div>
 
-      <div class="thread-compose">
-        <textarea
-          v-model="replyText"
-          class="compose-input"
-          placeholder="Write a reply…"
-          rows="3"
-          @keydown.meta.enter="sendReply"
-        />
-        <div class="compose-actions">
-          <button class="btn btn--ghost" @click="handleResolve">Resolve</button>
-          <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
-            <Send :size="14" /> Send Reply
-          </button>
-        </div>
-      </div>
     </template>
 
     <!-- Tab: Contact Info -->
@@ -266,11 +237,76 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab: Actions -->
+    <div v-else-if="activeTab === 'actions'" class="tab-panel">
+      <div class="panel-title">Quick Actions</div>
+      <div class="actions-grid">
+        <button class="action-card" @click="handleAction('truck')">
+          <Truck :size="20" class="action-icon action-icon--blue" />
+          <span class="action-label">Roll a Truck</span>
+          <span class="action-desc">Dispatch a field technician</span>
+        </button>
+        <button class="action-card" @click="handleAction('escalate')">
+          <AlertTriangle :size="20" class="action-icon action-icon--orange" />
+          <span class="action-label">Escalate</span>
+          <span class="action-desc">Raise priority to Tier 2</span>
+        </button>
+        <button class="action-card" @click="handleAction('reboot')">
+          <RotateCcw :size="20" class="action-icon action-icon--green" />
+          <span class="action-label">Reboot ONT</span>
+          <span class="action-desc">Remote restart optical terminal</span>
+        </button>
+        <button class="action-card" @click="handleAction('credit')">
+          <DollarSign :size="20" class="action-icon action-icon--purple" />
+          <span class="action-label">Apply Credit</span>
+          <span class="action-desc">Issue account credit</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Bottom dock: collapsible reply + AI panel -->
+    <div class="bottom-dock">
+      <div v-if="activeTab === 'comms'" class="compose-section">
+        <button class="compose-toggle" @click="composeCollapsed = !composeCollapsed">
+          <ChevronDown :size="14" :class="{ 'chevron-flipped': !composeCollapsed }" />
+          <span>Reply</span>
+        </button>
+        <div v-show="!composeCollapsed" class="thread-compose">
+          <textarea
+            v-model="replyText"
+            class="compose-input"
+            placeholder="Write a reply…"
+            rows="3"
+            @keydown.meta.enter="sendReply"
+          />
+          <div class="compose-actions">
+            <button class="btn btn--ghost" @click="handleResolve">Resolve</button>
+            <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
+              <Send :size="14" /> Send Reply
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="currentAi" class="ai-panel">
+        <div class="ai-panel-header">
+          <div class="ai-badge">
+            <Sparkles :size="11" /> AI
+          </div>
+          <span class="ai-panel-headline">{{ currentAi.headline }}</span>
+        </div>
+        <p class="ai-panel-body">{{ currentAi.body }}</p>
+        <button class="btn btn--ai" @click="followAi">
+          {{ currentAi.action }} <ChevronRight :size="14" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ChevronRight, Cog, History, Mail, MessageSquare, Phone, Send, Sparkles, User, Users, Zap } from "lucide-vue-next"
+import { AlertTriangle, ChevronDown, ChevronRight, Cog, DollarSign, History, Mail, MessageSquare, Phone, RotateCcw, Send, Sparkles, Truck, User, Users, Zap } from "lucide-vue-next"
 import { computed, nextTick, ref, watch } from "vue"
 import { useTickets } from "../composables/useTickets.js"
 
@@ -294,6 +330,7 @@ const {
 } = useTickets()
 
 const activeTab = ref("comms")
+const composeCollapsed = ref(true)
 const replyText = ref("")
 const newTag = ref("")
 const messagesEl = ref(null)
@@ -303,6 +340,7 @@ const tabs = [
   { id: "contact", icon: User, label: "Contact" },
   { id: "history", icon: History, label: "Ticket History" },
   { id: "subscriber", icon: Users, label: "Subscriber History" },
+  { id: "actions", icon: Zap, label: "Actions" },
   { id: "settings", icon: Cog, label: "Settings" },
 ]
 
@@ -311,7 +349,7 @@ const tempOptions = ["hot", "warm", "cool"]
 const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
-const currentAi = computed(() => aiSuggestions[props.ticketId] ?? null)
+const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
 
 function scrollToBottom() {
   nextTick(() => {
@@ -332,6 +370,8 @@ function sendReply() {
 function followAi() {
   const suggestion = currentAi.value
   if (!suggestion || !props.ticketId) return
+  activeTab.value = "comms"
+  composeCollapsed.value = false
   replyText.value = suggestion.replyText
   nextTick(() => sendReply())
 }
@@ -348,6 +388,11 @@ function handleAddTag() {
   newTag.value = ""
 }
 
+function handleAction(action) {
+  // Placeholder — will wire up real actions later
+  console.log(`Action triggered: ${action} for ticket ${props.ticketId}`)
+}
+
 watch(() => props.ticketId, () => {
   replyText.value = ""
   activeTab.value = "comms"
@@ -356,7 +401,7 @@ watch(() => props.ticketId, () => {
 </script>
 
 <style scoped>
-/* ── AI assist banner ──────────────────────────────────── */
+/* ── Layout ────────────────────────────────────────────── */
 
 .ticket-detail {
   display: flex;
@@ -365,33 +410,124 @@ watch(() => props.ticketId, () => {
   min-height: 0;
 }
 
-.ai-assist {
-  padding: 18px 24px;
-  background: rgba(168, 85, 247, 0.04);
-  border-bottom: 1px solid rgba(168, 85, 247, 0.12);
+/* ── Bottom dock ───────────────────────────────────────── */
+
+.bottom-dock {
   flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.ai-assist-top {
+.compose-section {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.compose-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 24px;
+  background: none;
+  border: none;
+  color: rgba(148, 163, 184, 0.5);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.compose-toggle:hover {
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.compose-toggle svg {
+  transition: transform 0.2s ease;
+}
+
+.chevron-flipped {
+  transform: rotate(180deg);
+}
+
+/* ── AI panel ──────────────────────────────────────────── */
+
+.ai-panel {
+  padding: 16px 24px;
+  background: rgba(168, 85, 247, 0.04);
+}
+
+.ai-panel-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
-.ai-assist-headline {
-  font-size: 17px;
+.ai-panel-headline {
+  font-size: 14px;
   font-weight: 600;
   color: #e2e8f0;
   line-height: 1.3;
 }
 
-.ai-assist-body {
-  font-size: 15px;
-  color: rgba(148, 163, 184, 0.65);
-  line-height: 1.6;
+.ai-panel-body {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.6);
+  line-height: 1.5;
   margin: 0 0 4px;
-  min-height: 1.6em;
+}
+
+/* ── Actions tab ───────────────────────────────────────── */
+
+.actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: center;
+  transition: all 0.15s;
+}
+
+.action-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.action-card:active {
+  transform: translateY(0);
+}
+
+.action-icon { opacity: 0.85; }
+.action-icon--blue { color: #60a5fa; }
+.action-icon--orange { color: #fb923c; }
+.action-icon--green { color: #34d399; }
+.action-icon--purple { color: #c084fc; }
+
+.action-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.action-desc {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.45);
+  line-height: 1.3;
 }
 
 /* ── Thread header ─────────────────────────────────────── */
@@ -1021,8 +1157,7 @@ watch(() => props.ticketId, () => {
 /* ── Compose ────────────────────────────────────────────── */
 
 .thread-compose {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  padding: 16px 24px;
+  padding: 0 24px 16px;
   flex-shrink: 0;
 }
 
