@@ -103,6 +103,7 @@ func main() {
 
 	r.Group(func(r chi.Router) {
 		r.Use(a.requireAPIKey)
+		r.Get("/org", a.getOrg)
 		r.Get("/tickets", a.listTickets)
 	})
 
@@ -165,6 +166,17 @@ func (a *app) requireAPIKey(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), orgContextKey, o)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+type orgResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+func (a *app) getOrg(w http.ResponseWriter, r *http.Request) {
+	o := orgFromContext(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(orgResponse{ID: o.ID, Name: o.Name})
 }
 
 type ticketRow struct {
