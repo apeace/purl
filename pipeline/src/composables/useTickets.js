@@ -1,6 +1,11 @@
 import { computed, reactive, ref } from "vue"
 
+const CURRENT_USER = "Alex Chen"
+
 // ── Helpers ──────────────────────────────────────────────
+
+const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 }
+const STATUS_ORDER = { escalated: 0, new: 1, open: 2, pending: 3, solved: 4, closed: 5 }
 
 const AVATAR_COLORS = [
   "#6366f1", "#ec4899", "#34d399", "#f59e0b",
@@ -33,6 +38,7 @@ function toTicket(t) {
     ticketId: `#${t.id.slice(0, 6).toUpperCase()}`,
     subject: t.title,
     priority: t.priority,
+    createdAt: t.created_at,
     wait: formatWait(t.created_at),
     avatarColor: avatarColor(t.reporter_name),
     status: t.status,
@@ -140,6 +146,22 @@ function clearFilters() {
   filterAssignees.clear()
   filterStatuses.clear()
 }
+
+// ── Sorting ─────────────────────────────────────────────
+
+const sortBy = ref("time")
+
+const sortedTickets = computed(() => {
+  const list = [...filteredTickets.value]
+  if (sortBy.value === "priority") {
+    list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9))
+  } else if (sortBy.value === "status") {
+    list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9))
+  } else if (sortBy.value === "assignee") {
+    list.sort((a, b) => a.assignee.localeCompare(b.assignee))
+  }
+  return list
+})
 
 // ── Derived state ───────────────────────────────────────
 
@@ -272,7 +294,9 @@ export function useTickets() {
     addTag,
     aiSuggestions,
     archiveTicket,
+    avatarColor,
     clearFilters,
+    CURRENT_USER,
     deleteTicket,
     filterAssignees,
     filterKeyword,
@@ -294,6 +318,8 @@ export function useTickets() {
     setAssignee,
     setStatus,
     setTemperature,
+    sortBy,
+    sortedTickets,
     tickets,
     toggleStar,
     uniqueAssignees,
