@@ -33,8 +33,8 @@ CREATE TABLE comments (
 
 -- +goose Down
 
-DROP TABLE comments;
-DROP TABLE tickets;
-DROP TABLE users;
-DROP TYPE ticket_priority;
-DROP TYPE ticket_status;
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS tickets;
+DROP TABLE IF EXISTS users;
+DROP TYPE IF EXISTS ticket_priority;
+DROP TYPE IF EXISTS ticket_status;
