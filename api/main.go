@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -12,8 +13,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 	"github.com/redis/go-redis/v9"
 )
+
+//go:embed migrations/*.sql
+var migrations embed.FS
 
 type config struct {
 	DatabaseURL string
@@ -55,6 +60,15 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 	log.Println("connected to postgres")
+
+	goose.SetBaseFS(migrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		log.Fatalf("goose set dialect: %v", err)
+	}
+	if err := goose.Up(db, "migrations"); err != nil {
+		log.Fatalf("goose up: %v", err)
+	}
+	log.Println("migrations applied")
 
 	opts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
