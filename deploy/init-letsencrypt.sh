@@ -14,6 +14,7 @@ cd "$(dirname "$0")"
 
 echo "==> Creating Docker volumes..."
 docker volume create "$CERTS_VOLUME" >/dev/null
+# certbot_www is used by the renewal certbot service in docker-compose.prod.yml
 docker volume create "$WWW_VOLUME" >/dev/null
 
 # Generate temporary self-signed certs so nginx can start before real certs exist.
@@ -33,44 +34,21 @@ for domain in "${DOMAINS[@]}"; do
   echo "   Generated self-signed cert for ${domain}"
 done
 
-echo "==> Starting nginx with temporary certs..."
-# --no-deps: start only nginx, not api/postgres/redis — those aren't needed to
-# serve the ACME challenge and may not be configured yet during initial setup.
-docker compose -f docker-compose.prod.yml up -d --no-deps nginx
-
-echo "==> Waiting for nginx to be ready..."
-for i in $(seq 1 30); do
-  # curl exits 0 on any HTTP response (including 301); non-zero means no connection yet.
-  if curl -s -o /dev/null http://localhost/; then
-    echo "   nginx is ready."
-    break
-  fi
-  if [ "$i" -eq 30 ]; then
-    echo "ERROR: nginx did not become ready after 30s. Check logs with:"
-    echo "  docker compose -f deploy/docker-compose.prod.yml logs nginx"
-    exit 1
-  fi
-  sleep 1
-done
-
-# Obtain real Let's Encrypt certificates for each domain.
+# Obtain real Let's Encrypt certificates using standalone mode.
+# Certbot binds port 80 itself — no nginx required during initial cert acquisition.
 for domain in "${DOMAINS[@]}"; do
   echo "==> Obtaining Let's Encrypt certificate for ${domain}..."
   docker run --rm \
     -v "$CERTS_VOLUME:/etc/letsencrypt" \
-    -v "$WWW_VOLUME:/var/www/certbot" \
+    -p 80:80 \
     certbot/certbot certonly \
-      --webroot \
-      --webroot-path=/var/www/certbot \
+      --standalone \
       --email "$EMAIL" \
       --agree-tos \
       --no-eff-email \
       --force-renewal \
       -d "$domain"
 done
-
-echo "==> Reloading nginx to pick up real certificates..."
-docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 
 echo ""
 echo "==> SSL bootstrap complete!"
