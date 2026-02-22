@@ -1,5 +1,6 @@
 import { computed, reactive, ref } from "vue"
-import { apiFetch } from "../utils/api.js"
+import { getTickets } from "@purl/lib"
+import "../utils/api.js"
 
 const CURRENT_USER = "Alex Chen"
 
@@ -292,8 +293,7 @@ function updateNotes(id, text) {
 // ── Data fetching ────────────────────────────────────────
 
 async function loadTickets() {
-  const res = await apiFetch("/tickets")
-  const data = await res.json()
+  const { data } = await getTickets()
   tickets.value = data.map(toTicket)
 }
 

@@ -8,6 +8,7 @@ import (
 type orgResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	Foo  string `json:"foobar"`
 }
 
 // @Summary     Get current organization
@@ -20,5 +21,5 @@ type orgResponse struct {
 func (a *app) getOrg(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(orgResponse{ID: o.ID, Name: o.Name})
+	json.NewEncoder(w).Encode(orgResponse{ID: o.ID, Name: o.Name, Foo: "bar"})
 }

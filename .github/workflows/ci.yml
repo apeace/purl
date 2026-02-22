@@ -25,14 +25,27 @@ jobs:
       - name: Generate docs
         run: swag init --dir . --output docs
 
+      - name: Upload OpenAPI spec
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-spec
+          path: api/docs/swagger.json
+
       - run: go build ./...
       - run: go vet ./...
 
   frontend:
     name: Check frontend
+    needs: [api]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Download OpenAPI spec
+        uses: actions/download-artifact@v4
+        with:
+          name: openapi-spec
+          path: api/docs/
 
       - uses: actions/setup-node@v4
         with:
@@ -40,4 +53,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      - name: Generate API client
+        run: npm run generate -w @purl/lib
+
       - run: npm run build -w @purl/purl

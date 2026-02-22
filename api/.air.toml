@@ -5,7 +5,7 @@ tmp_dir = "tmp"
   cmd = "swag init --dir . --output docs && go build -o ./tmp/server ."
   bin = "./tmp/server"
   include_ext = ["go"]
-  exclude_dir = ["tmp"]
+  exclude_dir = ["tmp", "docs"]
 
 [log]
   time = true
