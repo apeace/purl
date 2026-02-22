@@ -33,7 +33,7 @@
       <div class="sidebar-header">
         <div class="logo">
           <div class="logo-badge">P</div>
-          <span class="logo-text">Pipeline</span>
+          <span class="logo-text">Purl</span>
         </div>
         <button class="icon-btn sidebar-close" aria-label="Close navigation" @click="open = false">
           <X :size="18" />
@@ -83,7 +83,7 @@
           <div class="user-avatar">A</div>
           <div class="user-info">
             <div class="user-name">Alex Chen</div>
-            <div class="user-email">alex@pipeline.io</div>
+            <div class="user-email">alex@purl.io</div>
           </div>
         </div>
       </div>
@@ -97,7 +97,7 @@
         </button>
         <div class="logo">
           <div class="logo-badge logo-badge--sm">P</div>
-          <span class="logo-text">Pipeline</span>
+          <span class="logo-text">Purl</span>
         </div>
       </div>
       <div class="mobile-header-right">

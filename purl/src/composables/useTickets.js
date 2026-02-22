@@ -73,7 +73,7 @@ const aiSuggestions = {
     headline: "Config 404 — matches known post-update bug",
     body: "Sarah's error is identical to 3 tickets resolved last week after the v2.4 rollout. A missing config.json is caused by the new deploy script skipping static asset copy. Send the one-line fix and mark resolved.",
     action: "Send fix & resolve",
-    replyText: "Hi Sarah! This is a known issue with the v2.4 update — the deploy script misses copying config.json. Run this in your project root: `cp node_modules/@pipeline/defaults/config.json public/`. That should fix it immediately. Let me know if you need anything else!",
+    replyText: "Hi Sarah! This is a known issue with the v2.4 update — the deploy script misses copying config.json. Run this in your project root: `cp node_modules/@purl/defaults/config.json public/`. That should fix it immediately. Let me know if you need anything else!",
   },
   2: {
     headline: "CSV export bug — patch ships in 24h",

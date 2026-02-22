@@ -1,6 +1,6 @@
 const BASE_URL = "http://localhost:9090"
 
-export const API_KEY_STORAGE_KEY = "pipeline_api_key"
+export const API_KEY_STORAGE_KEY = "purl_api_key"
 
 export function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE_KEY) ?? ""
