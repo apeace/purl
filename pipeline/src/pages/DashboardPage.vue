@@ -1,15 +1,15 @@
 <template>
   <div>
     <div class="page-header">
-      <h1 class="page-title">Good evening, Alex</h1>
-      <p class="page-subtitle">Here's what's happening with your pipeline.</p>
+      <h1 class="page-title">Good {{ greeting }}, Alex</h1>
+      <p class="page-subtitle">Here's your support queue overview.</p>
     </div>
 
     <div class="stats-grid">
-      <StatCard label="Revenue" value="$142K" :change="12" color="#818cf8" :data="[4,5,6,5,7,8,9,7,8,10,9,11]" :delay="100" />
-      <StatCard label="Deals Won" value="24" :change="8" color="#34d399" :data="[3,4,3,5,6,5,7,6,8,7,8,9]" :delay="200" />
-      <StatCard label="Pipeline" value="$380K" :change="-3" color="#f59e0b" :data="[9,8,7,8,7,6,7,6,5,6,5,6]" :delay="300" />
-      <StatCard label="Avg Deal" value="$18.2K" :change="5" color="#ec4899" :data="[5,6,5,7,6,8,7,8,9,8,9,10]" :delay="400" />
+      <StatCard label="Open Tickets" :value="String(hudOpen)" :change="openChange" color="#818cf8" :data="openSparkline" :delay="100" />
+      <StatCard label="Resolved Today" :value="String(hudResolvedToday)" :change="18" color="#34d399" :data="[3,5,4,6,5,7,8,6,7,9,8,10]" :delay="200" />
+      <StatCard label="Avg Response" value="24m" :change="12" color="#f59e0b" :data="[40,38,35,32,30,28,30,27,26,25,24,24]" :delay="300" />
+      <StatCard label="CSAT Score" value="94%" :change="3" color="#ec4899" :data="[88,89,90,89,91,92,91,93,92,93,94,94]" :delay="400" />
     </div>
 
     <div class="panels-grid">
@@ -18,36 +18,89 @@
           <span class="panel-title">Recent Activity</span>
           <span class="panel-link">View all</span>
         </div>
-        <ActivityRow name="Sarah Lin" action="Moved Acme Corp to Negotiation" time="2m ago" color="#6366f1" :delay="500" />
-        <ActivityRow name="Mike Torres" action="Added note on Bolt deal" time="15m ago" color="#ec4899" :delay="600" />
-        <ActivityRow name="Priya Patel" action="Won TechFlow — $24,000" time="1h ago" color="#34d399" :delay="700" />
-        <ActivityRow name="James Kim" action="Created new lead: NexGen" time="3h ago" color="#f59e0b" :delay="800" />
-        <ActivityRow name="Alex Chen" action="Updated Q4 forecast" time="5h ago" color="#6366f1" :delay="900" />
+        <ActivityRow name="Alex Chen" action="Resolved #A3F2 — Config 404 bug" time="2m ago" color="#34d399" :delay="500" />
+        <ActivityRow name="Sarah Lin" action="Escalated #B71C — Billing dispute" time="18m ago" color="#f97316" :delay="600" />
+        <ActivityRow name="Mike Torres" action="Replied to #C904 — CSV export issue" time="45m ago" color="#6366f1" :delay="700" />
+        <ActivityRow name="Priya Patel" action="Assigned #D5E8 to Alex Chen" time="1h ago" color="#a855f7" :delay="800" />
+        <ActivityRow name="James Kim" action="Merged duplicate tickets #E1A0, #E1A3" time="2h ago" color="#ec4899" :delay="900" />
       </div>
 
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">Top Deals</span>
-          <span class="panel-link">View pipeline</span>
+          <span class="panel-title">Tickets by Priority</span>
+          <span class="panel-link">View inbox</span>
         </div>
         <div
-          v-for="(deal, i) in topDeals"
-          :key="deal.name"
-          class="deal-row"
-          :class="{ 'deal-row--last': i === topDeals.length - 1 }"
+          v-for="(row, i) in priorityBreakdown"
+          :key="row.label"
+          class="bar-row"
+          :class="{ 'bar-row--last': i === priorityBreakdown.length - 1 }"
         >
-          <div class="deal-row-top">
-            <span class="deal-name">{{ deal.name }}</span>
-            <span class="deal-val" :style="{ color: deal.color }">{{ deal.val }}</span>
+          <div class="bar-row-top">
+            <div class="bar-label-wrap">
+              <span class="bar-dot" :style="{ background: row.color }" />
+              <span class="bar-name">{{ row.label }}</span>
+            </div>
+            <span class="bar-val" :style="{ color: row.color }">{{ row.count }}</span>
           </div>
-          <div class="deal-bar-wrap">
-            <div class="deal-track">
+          <div class="bar-wrap">
+            <div class="bar-track">
               <div
-                class="deal-fill"
-                :style="{ width: `${deal.pct}%`, background: `linear-gradient(90deg, ${deal.color}, ${deal.color}88)` }"
+                class="bar-fill"
+                :style="{ width: `${row.pct}%`, background: `linear-gradient(90deg, ${row.color}, ${row.color}88)` }"
               />
             </div>
-            <span class="deal-pct">{{ deal.pct }}%</span>
+            <span class="bar-pct">{{ row.pct }}%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Team Leaderboard</span>
+          <span class="panel-link">This week</span>
+        </div>
+        <div
+          v-for="(agent, i) in teamStats"
+          :key="agent.name"
+          class="agent-row"
+          :class="{ 'agent-row--last': i === teamStats.length - 1 }"
+        >
+          <div class="agent-avatar" :style="{ background: agent.color }">{{ agent.name[0] }}</div>
+          <div class="agent-info">
+            <span class="agent-name">{{ agent.name }}</span>
+            <span class="agent-meta">{{ agent.resolved }} resolved · {{ agent.avgTime }} avg</span>
+          </div>
+          <div class="agent-score">
+            <span class="agent-csat">{{ agent.csat }}%</span>
+            <span class="agent-csat-label">CSAT</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">SLA Status</span>
+          <span class="panel-link">View details</span>
+        </div>
+        <div
+          v-for="(sla, i) in slaMetrics"
+          :key="sla.label"
+          class="bar-row"
+          :class="{ 'bar-row--last': i === slaMetrics.length - 1 }"
+        >
+          <div class="bar-row-top">
+            <span class="bar-name">{{ sla.label }}</span>
+            <span class="bar-val" :style="{ color: sla.color }">{{ sla.value }}</span>
+          </div>
+          <div class="bar-wrap">
+            <div class="bar-track">
+              <div
+                class="bar-fill"
+                :style="{ width: `${sla.pct}%`, background: `linear-gradient(90deg, ${sla.color}, ${sla.color}88)` }"
+              />
+            </div>
+            <span class="bar-pct">{{ sla.pct }}%</span>
           </div>
         </div>
       </div>
@@ -56,14 +109,55 @@
 </template>
 
 <script setup>
+import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
 import StatCard from "../components/StatCard.vue"
+import { useTickets } from "../composables/useTickets.js"
 
-const topDeals = [
-  { name: "Acme Corp", val: "$52,000", pct: 85, color: "#6366f1" },
-  { name: "Quantum AI", val: "$38,000", pct: 60, color: "#a855f7" },
-  { name: "CloudBase", val: "$28,000", pct: 35, color: "#ec4899" },
-  { name: "NexGen Inc", val: "$45,000", pct: 45, color: "#f59e0b" },
+const { hudOpen, hudResolvedToday, tickets } = useTickets()
+
+const hour = new Date().getHours()
+const greeting = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"
+
+// Sparkline from live open ticket counts (simulated trailing data + current)
+const openSparkline = computed(() => {
+  const current = hudOpen.value
+  return [current + 4, current + 3, current + 5, current + 2, current + 3, current + 1, current + 2, current, current + 1, current - 1, current, current]
+})
+
+const openChange = computed(() => {
+  const current = hudOpen.value
+  if (!current) return 0
+  return -Math.round(((current + 4 - current) / (current + 4)) * 100)
+})
+
+const priorityBreakdown = computed(() => {
+  const open = tickets.value.filter((t) => t.status !== "closed" && t.status !== "solved")
+  const total = open.length || 1
+  const counts = { urgent: 0, high: 0, medium: 0, low: 0 }
+  for (const t of open) {
+    if (counts[t.priority] !== undefined) counts[t.priority]++
+  }
+  return [
+    { label: "Urgent", count: counts.urgent, pct: Math.round((counts.urgent / total) * 100), color: "#ef4444" },
+    { label: "High", count: counts.high, pct: Math.round((counts.high / total) * 100), color: "#f97316" },
+    { label: "Medium", count: counts.medium, pct: Math.round((counts.medium / total) * 100), color: "#f59e0b" },
+    { label: "Low", count: counts.low, pct: Math.round((counts.low / total) * 100), color: "#34d399" },
+  ]
+})
+
+const teamStats = [
+  { name: "Alex Chen", resolved: 12, avgTime: "18m", csat: 97, color: "#6366f1" },
+  { name: "Sarah Lin", resolved: 9, avgTime: "22m", csat: 95, color: "#ec4899" },
+  { name: "Mike Torres", resolved: 7, avgTime: "31m", csat: 92, color: "#34d399" },
+  { name: "Priya Patel", resolved: 6, avgTime: "26m", csat: 94, color: "#f59e0b" },
+]
+
+const slaMetrics = [
+  { label: "First Response (<15m)", value: "92%", pct: 92, color: "#34d399" },
+  { label: "Resolution (<4h)", value: "87%", pct: 87, color: "#818cf8" },
+  { label: "Escalation Rate", value: "8%", pct: 8, color: "#f97316" },
+  { label: "Reopen Rate", value: "3%", pct: 3, color: "#ef4444" },
 ]
 </script>
 
@@ -125,54 +219,136 @@ const topDeals = [
   font-weight: 500;
 }
 
-.deal-row {
+/* ── Bar rows (priority breakdown + SLA) ─────────────────── */
+
+.bar-row {
   padding: 12px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.deal-row--last {
+.bar-row--last {
   border-bottom: none;
 }
 
-.deal-row-top {
+.bar-row-top {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   margin-bottom: 6px;
 }
 
-.deal-name {
+.bar-label-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bar-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bar-name {
   font-size: 13px;
   font-weight: 600;
   color: #e2e8f0;
 }
 
-.deal-val {
+.bar-val {
   font-size: 13px;
   font-weight: 700;
 }
 
-.deal-bar-wrap {
+.bar-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.deal-track {
+.bar-track {
   flex: 1;
   height: 4px;
   border-radius: 2px;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.deal-fill {
+.bar-fill {
   height: 100%;
   border-radius: 2px;
   transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.deal-pct {
+.bar-pct {
   font-size: 11px;
   color: rgba(148, 163, 184, 0.5);
   min-width: 28px;
+}
+
+/* ── Agent rows (team leaderboard) ───────────────────────── */
+
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.agent-row--last {
+  border-bottom: none;
+}
+
+.agent-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.agent-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.agent-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.agent-meta {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.agent-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+
+.agent-csat {
+  font-size: 14px;
+  font-weight: 700;
+  color: #34d399;
+}
+
+.agent-csat-label {
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 </style>
