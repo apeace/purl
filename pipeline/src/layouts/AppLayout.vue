@@ -618,6 +618,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
 
 .main-content {
   flex: 1;
+  min-width: 0;
   padding-top: 56px;
   min-height: 100dvh;
   transition: margin-left 0.3s cubic-bezier(0.16, 1, 0.3, 1);

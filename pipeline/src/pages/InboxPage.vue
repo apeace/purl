@@ -30,6 +30,7 @@
           <button class="toolbar-btn" title="Refresh" @click="refresh">
             <RefreshCw :size="15" :class="{ 'spinning': refreshing }" />
           </button>
+          <FilterPanel />
         </div>
       </Transition>
 
@@ -110,20 +111,21 @@
 <script setup>
 import { Archive, ChevronLeft, ChevronRight, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { computed, reactive, ref } from "vue"
+import FilterPanel from "../components/FilterPanel.vue"
 import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
 
 const {
   archiveTicket,
   deleteTicket,
+  filteredTickets,
   markRead,
-  tickets,
   toggleStar,
 } = useTickets()
 
-// Derive inbox rows from shared tickets (exclude closed)
+// Derive inbox rows from filtered tickets (exclude closed)
 const emails = computed(() =>
-  tickets.value
+  filteredTickets.value
     .filter((t) => t.status !== "closed")
     .map((t) => ({
       id: t.id,

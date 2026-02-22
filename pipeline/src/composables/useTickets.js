@@ -1,4 +1,4 @@
-import { computed, ref } from "vue"
+import { computed, reactive, ref } from "vue"
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ function toTicket(t) {
     subscription: { status: "active", id: "", plan: "" },
     tags: [],
     temperature: "warm",
-    assignee: "Unassigned",
+    assignee: t.assignee_name ?? "Unassigned",
     notes: "",
     messages: t.description
       ? [{ id: 1, from: "customer", channel: "email", time: formatWait(t.created_at), text: t.description }]
@@ -89,6 +89,57 @@ const aiSuggestions = {
 }
 
 const resolvedToday = ref(8)
+
+// ── Filters ─────────────────────────────────────────────
+
+const filterKeyword = ref("")
+const filterPriorities = reactive(new Set())
+const filterAssignees = reactive(new Set())
+const filterStatuses = reactive(new Set())
+
+const filteredTickets = computed(() => {
+  let result = tickets.value
+
+  const kw = filterKeyword.value.trim().toLowerCase()
+  if (kw) {
+    result = result.filter((t) => {
+      const firstMsg = t.messages[0]?.text ?? ""
+      return t.subject.toLowerCase().includes(kw) || firstMsg.toLowerCase().includes(kw)
+    })
+  }
+
+  if (filterPriorities.size) {
+    result = result.filter((t) => filterPriorities.has(t.priority))
+  }
+  if (filterAssignees.size) {
+    result = result.filter((t) => filterAssignees.has(t.assignee))
+  }
+  if (filterStatuses.size) {
+    result = result.filter((t) => filterStatuses.has(t.status))
+  }
+
+  return result
+})
+
+const activeFilterCount = computed(() => {
+  let n = 0
+  if (filterKeyword.value.trim()) n++
+  if (filterPriorities.size) n++
+  if (filterAssignees.size) n++
+  if (filterStatuses.size) n++
+  return n
+})
+
+const uniqueAssignees = computed(() =>
+  [...new Set(tickets.value.map((t) => t.assignee))].sort()
+)
+
+function clearFilters() {
+  filterKeyword.value = ""
+  filterPriorities.clear()
+  filterAssignees.clear()
+  filterStatuses.clear()
+}
 
 // ── Derived state ───────────────────────────────────────
 
@@ -217,27 +268,35 @@ async function loadTickets() {
 
 export function useTickets() {
   return {
-    tickets,
-    aiSuggestions,
-    openTickets,
-    hudOpen,
-    hudLongestWait,
-    hudResolvedToday,
-    resolvedToday,
-    parseWait,
-    loadTickets,
-    resolveTicket,
-    archiveTicket,
-    deleteTicket,
-    markRead,
-    toggleStar,
-    sendReply,
-    followAi,
-    setStatus,
-    setAssignee,
-    setTemperature,
+    activeFilterCount,
     addTag,
+    aiSuggestions,
+    archiveTicket,
+    clearFilters,
+    deleteTicket,
+    filterAssignees,
+    filterKeyword,
+    filterPriorities,
+    filterStatuses,
+    filteredTickets,
+    followAi,
+    hudLongestWait,
+    hudOpen,
+    hudResolvedToday,
+    loadTickets,
+    markRead,
+    openTickets,
+    parseWait,
     removeTag,
+    resolveTicket,
+    resolvedToday,
+    sendReply,
+    setAssignee,
+    setStatus,
+    setTemperature,
+    tickets,
+    toggleStar,
+    uniqueAssignees,
     updateNotes,
   }
 }
