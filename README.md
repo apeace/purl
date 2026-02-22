@@ -13,9 +13,24 @@ Purl is a modern support ticketing system built for teams who are tired of Zende
 
 ## Getting Started
 
+**1. Copy the API env file:**
+
 ```bash
-npm install
-npm run dev -w purl
+cp api/.env.example api/.env
+```
+
+**2. Start Docker:**
+
+```bash
+docker compose up -d
+```
+
+This starts the API (port 9090), frontend (port 9091), PostgreSQL, and Redis.
+
+**3. Seed the database** (wipes existing data and inserts fake tickets):
+
+```bash
+./cmd.sh seed
 ```
 
 ## Project Structure
