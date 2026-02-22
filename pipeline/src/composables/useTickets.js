@@ -17,10 +17,29 @@ const tickets = ref([
     starred: true,
     labels: ["urgent"],
     time: "2:14 PM",
+    email: "sarah.lin@acmecorp.com",
+    phone: "+1 (415) 555-0134",
+    subscription: { status: "active", id: "SUB-4820", plan: "Enterprise" },
+    tags: ["v2.4", "deploy-issue"],
+    temperature: "hot",
+    assignee: "Alex Chen",
+    notes: "Key contact at Acme — manages their whole engineering org. Very responsive, usually prefers quick email replies.",
     messages: [
-      { id: 1, from: "customer", time: "2h ago", text: "Hi, after the latest update we can't access the admin panel. It just shows a blank screen. We've tried clearing the cache and restarting the server but nothing works. This is blocking our entire team." },
-      { id: 2, from: "agent", time: "1h 45m ago", text: "Hi Sarah, thanks for reaching out — sorry to hear you're blocked. Could you share which browser and OS version you're on? And do you see any errors in the browser console?" },
-      { id: 3, from: "customer", time: "45m ago", text: "Chrome 121 on Windows 11. The console shows: 'Error: Failed to load config.json — 404'. We have 15 people waiting on this, please help ASAP." },
+      { id: 1, from: "customer", channel: "email", time: "2h ago", text: "Hi, after the latest update we can't access the admin panel. It just shows a blank screen. We've tried clearing the cache and restarting the server but nothing works. This is blocking our entire team." },
+      { id: 2, from: "agent", channel: "email", time: "1h 45m ago", text: "Hi Sarah, thanks for reaching out — sorry to hear you're blocked. Could you share which browser and OS version you're on? And do you see any errors in the browser console?" },
+      { id: 3, from: "customer", channel: "email", time: "45m ago", text: "Chrome 121 on Windows 11. The console shows: 'Error: Failed to load config.json — 404'. We have 15 people waiting on this, please help ASAP." },
+    ],
+    ticketHistory: [
+      { time: "2h 15m ago", event: "Ticket created via email" },
+      { time: "2h ago", event: "Auto-assigned to Alex Chen" },
+      { time: "1h 45m ago", event: "Agent replied via email" },
+      { time: "45m ago", event: "Customer replied" },
+      { time: "30m ago", event: "Priority escalated to high" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1780", subject: "SSO login failing intermittently", status: "solved", date: "Feb 10" },
+      { ticketId: "#1623", subject: "Bulk import timing out", status: "solved", date: "Jan 18" },
+      { ticketId: "#1501", subject: "Onboarding help — team setup", status: "closed", date: "Dec 3" },
     ],
   },
   {
@@ -37,8 +56,23 @@ const tickets = ref([
     starred: false,
     labels: ["bug"],
     time: "1:47 PM",
+    email: "mike.t@dataflow.io",
+    phone: "+1 (628) 555-0198",
+    subscription: { status: "active", id: "SUB-3911", plan: "Business" },
+    tags: ["csv", "export-bug"],
+    temperature: "warm",
+    assignee: "Alex Chen",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "1h 20m ago", text: "The CSV export button on the Reports page doesn't do anything when I click it. No download, no error — just nothing. Started happening this morning." },
+      { id: 1, from: "customer", channel: "email", time: "1h 20m ago", text: "The CSV export button on the Reports page doesn't do anything when I click it. No download, no error — just nothing. Started happening this morning." },
+    ],
+    ticketHistory: [
+      { time: "1h 20m ago", event: "Ticket created via email" },
+      { time: "1h ago", event: "Auto-assigned to Alex Chen" },
+      { time: "40m ago", event: "Escalated to engineering" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1710", subject: "Dashboard widget not loading", status: "solved", date: "Feb 1" },
     ],
   },
   {
@@ -55,8 +89,24 @@ const tickets = ref([
     starred: false,
     labels: ["billing"],
     time: "12:30 PM",
+    email: "priya@orionlabs.co",
+    phone: "+1 (510) 555-0276",
+    subscription: { status: "active", id: "SUB-5102", plan: "Enterprise" },
+    tags: ["billing", "invoice"],
+    temperature: "warm",
+    assignee: "Alex Chen",
+    notes: "Priya is the billing admin. Always CC finance@orionlabs.co on billing threads.",
     messages: [
-      { id: 1, from: "customer", time: "45m ago", text: "Our March invoice shows $2,400 but we're on the $1,800/mo plan. We haven't added any seats or changed our plan. Can you investigate?" },
+      { id: 1, from: "customer", channel: "email", time: "45m ago", text: "Our March invoice shows $2,400 but we're on the $1,800/mo plan. We haven't added any seats or changed our plan. Can you investigate?" },
+    ],
+    ticketHistory: [
+      { time: "45m ago", event: "Ticket created via email" },
+      { time: "40m ago", event: "Auto-assigned to Alex Chen" },
+      { time: "35m ago", event: "Tagged as billing" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1690", subject: "Need invoice for tax filing", status: "solved", date: "Jan 28" },
+      { ticketId: "#1445", subject: "Upgrade to Enterprise plan", status: "closed", date: "Nov 15" },
     ],
   },
   {
@@ -73,8 +123,25 @@ const tickets = ref([
     starred: false,
     labels: ["urgent", "bug"],
     time: "11:15 AM",
+    email: "jkim@nexgen.com",
+    phone: "+1 (650) 555-0312",
+    subscription: { status: "active", id: "SUB-4455", plan: "Business" },
+    tags: ["api", "rate-limit"],
+    temperature: "hot",
+    assignee: "Alex Chen",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "30m ago", text: "We're getting 429 errors on the /events endpoint even though our dashboard shows we're only at 40% of our rate limit quota. This started about an hour ago." },
+      { id: 1, from: "customer", channel: "sms", time: "30m ago", text: "We're getting 429 errors on the /events endpoint even though our dashboard shows we're only at 40% of our rate limit quota. This started about an hour ago." },
+    ],
+    ticketHistory: [
+      { time: "30m ago", event: "Ticket created via SMS" },
+      { time: "28m ago", event: "Auto-assigned to Alex Chen" },
+      { time: "25m ago", event: "Priority set to high" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1802", subject: "API key rotation question", status: "solved", date: "Feb 14" },
+      { ticketId: "#1598", subject: "Webhook delivery delays", status: "solved", date: "Jan 7" },
+      { ticketId: "#1390", subject: "Sandbox environment setup", status: "closed", date: "Oct 20" },
     ],
   },
   {
@@ -91,9 +158,22 @@ const tickets = ref([
     starred: true,
     labels: ["feature"],
     time: "10:02 AM",
+    email: "aisha.j@vertexco.com",
+    phone: "+1 (212) 555-0187",
+    subscription: { status: "active", id: "SUB-3680", plan: "Pro" },
+    tags: ["feature-request"],
+    temperature: "cool",
+    assignee: "Unassigned",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "3h ago", text: "Hi team, we'd love to be able to bulk export all our data in one click. Currently we have to go page by page which takes forever for us." },
+      { id: 1, from: "customer", channel: "email", time: "3h ago", text: "Hi team, we'd love to be able to bulk export all our data in one click. Currently we have to go page by page which takes forever for us." },
     ],
+    ticketHistory: [
+      { time: "3h 10m ago", event: "Ticket created via email" },
+      { time: "3h ago", event: "Tagged as feature-request" },
+      { time: "2h ago", event: "Status set to pending" },
+    ],
+    subscriberHistory: [],
   },
   {
     id: 6,
@@ -109,10 +189,27 @@ const tickets = ref([
     starred: false,
     labels: [],
     time: "9:44 AM",
+    email: "carlos.m@helixltd.com",
+    phone: "+1 (305) 555-0245",
+    subscription: { status: "active", id: "SUB-2910", plan: "Business" },
+    tags: ["auth", "password-reset"],
+    temperature: "cool",
+    assignee: "Alex Chen",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "5h ago", text: "The password reset email never arrives. We've checked spam folders." },
-      { id: 2, from: "agent", time: "4h ago", text: "Hi Carlos, I've fixed the email routing issue on your account. Please try again now." },
-      { id: 3, from: "customer", time: "4h ago", text: "Thanks for the quick fix! The password reset is working perfectly now. I'll let the rest of my team know. Really appreciate the fast response." },
+      { id: 1, from: "customer", channel: "email", time: "5h ago", text: "The password reset email never arrives. We've checked spam folders." },
+      { id: 2, from: "agent", channel: "email", time: "4h ago", text: "Hi Carlos, I've fixed the email routing issue on your account. Please try again now." },
+      { id: 3, from: "customer", channel: "email", time: "4h ago", text: "Thanks for the quick fix! The password reset is working perfectly now. I'll let the rest of my team know. Really appreciate the fast response." },
+    ],
+    ticketHistory: [
+      { time: "5h ago", event: "Ticket created via email" },
+      { time: "4h 30m ago", event: "Assigned to Alex Chen" },
+      { time: "4h ago", event: "Agent replied" },
+      { time: "4h ago", event: "Customer confirmed fix" },
+      { time: "3h 30m ago", event: "Resolved by Alex Chen" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1560", subject: "Two-factor authentication help", status: "solved", date: "Jan 2" },
     ],
   },
   {
@@ -129,8 +226,22 @@ const tickets = ref([
     starred: false,
     labels: ["feature"],
     time: "Yesterday",
+    email: "emma.w@stratosinc.com",
+    phone: "+1 (312) 555-0167",
+    subscription: { status: "active", id: "SUB-5230", plan: "Pro" },
+    tags: ["integration", "salesforce"],
+    temperature: "warm",
+    assignee: "Unassigned",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "1d ago", text: "We're looking to integrate Pipeline with our Salesforce setup. Is there a native connector available or would we need to use the API directly?" },
+      { id: 1, from: "customer", channel: "email", time: "1d ago", text: "We're looking to integrate Pipeline with our Salesforce setup. Is there a native connector available or would we need to use the API directly?" },
+    ],
+    ticketHistory: [
+      { time: "1d ago", event: "Ticket created via email" },
+      { time: "23h ago", event: "Status set to pending" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1480", subject: "Custom field configuration", status: "solved", date: "Nov 22" },
     ],
   },
   {
@@ -147,8 +258,24 @@ const tickets = ref([
     starred: false,
     labels: ["bug", "urgent"],
     time: "Yesterday",
+    email: "d.park@nimbusco.io",
+    phone: "+1 (408) 555-0293",
+    subscription: { status: "active", id: "SUB-4100", plan: "Enterprise" },
+    tags: ["webhook", "api"],
+    temperature: "hot",
+    assignee: "Unassigned",
+    notes: "Enterprise account — high value. David is their CTO, prefers phone calls.",
     messages: [
-      { id: 1, from: "customer", time: "1d ago", text: "Our webhook endpoint is registered and the URL is correct, but events just aren't arriving. No errors in logs either. This broke overnight." },
+      { id: 1, from: "customer", channel: "phone", time: "1d 2h ago", text: "Called in about webhook endpoint — registered and URL is correct, but events aren't arriving. No errors in logs. Broke overnight. Wants urgent callback." },
+      { id: 2, from: "customer", channel: "email", time: "1d ago", text: "Our webhook endpoint is registered and the URL is correct, but events just aren't arriving. No errors in logs either. This broke overnight." },
+    ],
+    ticketHistory: [
+      { time: "1d 2h ago", event: "Ticket created via phone call" },
+      { time: "1d ago", event: "Customer followed up via email" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1720", subject: "Webhook payload format change request", status: "solved", date: "Feb 5" },
+      { ticketId: "#1550", subject: "API authentication errors", status: "solved", date: "Dec 28" },
     ],
   },
   {
@@ -165,8 +292,22 @@ const tickets = ref([
     starred: false,
     labels: ["billing"],
     time: "Mon",
+    email: "mei.zhang@luminacorp.com",
+    phone: "+1 (617) 555-0321",
+    subscription: { status: "active", id: "SUB-3450", plan: "Enterprise" },
+    tags: ["gdpr", "compliance"],
+    temperature: "cool",
+    assignee: "Unassigned",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "2d ago", text: "Hi, one of our customers has submitted a formal data export request under GDPR Article 20. What's the process for fulfilling this through Pipeline?" },
+      { id: 1, from: "customer", channel: "email", time: "2d ago", text: "Hi, one of our customers has submitted a formal data export request under GDPR Article 20. What's the process for fulfilling this through Pipeline?" },
+    ],
+    ticketHistory: [
+      { time: "2d ago", event: "Ticket created via email" },
+      { time: "2d ago", event: "Status set to pending" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1380", subject: "Data retention policy question", status: "solved", date: "Oct 12" },
     ],
   },
   {
@@ -183,8 +324,21 @@ const tickets = ref([
     starred: false,
     labels: ["bug"],
     time: "Mon",
+    email: "raj@cobaltsystems.com",
+    phone: "+1 (503) 555-0188",
+    subscription: { status: "active", id: "SUB-4780", plan: "Pro" },
+    tags: ["ui", "branding"],
+    temperature: "cool",
+    assignee: "Unassigned",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "2d ago", text: "Since the last update, the login screen is displaying our old company logo instead of the one we uploaded in brand settings last month." },
+      { id: 1, from: "customer", channel: "email", time: "2d ago", text: "Since the last update, the login screen is displaying our old company logo instead of the one we uploaded in brand settings last month." },
+    ],
+    ticketHistory: [
+      { time: "2d ago", event: "Ticket created via email" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1650", subject: "Brand color customization", status: "solved", date: "Jan 20" },
     ],
   },
   {
@@ -201,8 +355,22 @@ const tickets = ref([
     starred: true,
     labels: [],
     time: "Sun",
+    email: "s.turner@apexglobal.com",
+    phone: "+1 (720) 555-0144",
+    subscription: { status: "active", id: "SUB-5500", plan: "Business" },
+    tags: ["upsell"],
+    temperature: "warm",
+    assignee: "Unassigned",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "3d ago", text: "We've been really happy with Pipeline and want to discuss upgrading to the Enterprise plan. Can someone from your team reach out to us?" },
+      { id: 1, from: "customer", channel: "email", time: "3d ago", text: "We've been really happy with Pipeline and want to discuss upgrading to the Enterprise plan. Can someone from your team reach out to us?" },
+    ],
+    ticketHistory: [
+      { time: "3d ago", event: "Ticket created via email" },
+      { time: "3d ago", event: "Status set to pending" },
+    ],
+    subscriberHistory: [
+      { ticketId: "#1520", subject: "Team seat addition", status: "solved", date: "Dec 15" },
     ],
   },
   {
@@ -219,9 +387,25 @@ const tickets = ref([
     starred: false,
     labels: ["bug"],
     time: "Mar 18",
+    email: "a.rivera@forgelabs.dev",
+    phone: "+1 (206) 555-0257",
+    subscription: { status: "trial", id: "SUB-5801", plan: "Enterprise Trial" },
+    tags: ["sso", "saml", "config"],
+    temperature: "warm",
+    assignee: "Alex Chen",
+    notes: "",
     messages: [
-      { id: 1, from: "customer", time: "4d ago", text: "We configured our SAML SSO settings but they don't seem to save. Every time we navigate away and come back the fields are blank again." },
+      { id: 1, from: "customer", channel: "email", time: "4d ago", text: "We configured our SAML SSO settings but they don't seem to save. Every time we navigate away and come back the fields are blank again." },
+      { id: 2, from: "agent", channel: "email", time: "3d ago", text: "Hi Alex, thanks for reporting this. I'm looking into the SSO persistence issue now — can you confirm which SAML provider you're using?" },
+      { id: 3, from: "customer", channel: "sms", time: "3d ago", text: "We're using Okta. Happy to do a screenshare if that helps debug it." },
     ],
+    ticketHistory: [
+      { time: "4d ago", event: "Ticket created via email" },
+      { time: "4d ago", event: "Assigned to Alex Chen" },
+      { time: "3d ago", event: "Agent replied via email" },
+      { time: "3d ago", event: "Customer replied via SMS" },
+    ],
+    subscriberHistory: [],
   },
 ])
 
@@ -326,6 +510,7 @@ function sendReply(id, text) {
   ticket.messages.push({
     id: ticket.messages.length + 1,
     from: "agent",
+    channel: "email",
     time: "just now",
     text,
   })
@@ -336,6 +521,36 @@ function followAi(id) {
   const suggestion = aiSuggestions[id]
   if (!suggestion) return
   sendReply(id, suggestion.replyText)
+}
+
+function setStatus(id, status) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.status = status
+}
+
+function setAssignee(id, assignee) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.assignee = assignee
+}
+
+function setTemperature(id, temperature) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.temperature = temperature
+}
+
+function addTag(id, tag) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket && !ticket.tags.includes(tag)) ticket.tags.push(tag)
+}
+
+function removeTag(id, tag) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.tags = ticket.tags.filter((t) => t !== tag)
+}
+
+function updateNotes(id, text) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.notes = text
 }
 
 // ── Public composable ───────────────────────────────────
@@ -357,5 +572,11 @@ export function useTickets() {
     toggleStar,
     sendReply,
     followAi,
+    setStatus,
+    setAssignee,
+    setTemperature,
+    addTag,
+    removeTag,
+    updateNotes,
   }
 }
