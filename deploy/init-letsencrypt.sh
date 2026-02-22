@@ -34,10 +34,24 @@ for domain in "${DOMAINS[@]}"; do
 done
 
 echo "==> Starting nginx with temporary certs..."
-docker compose -f docker-compose.prod.yml up -d nginx
+# --no-deps: start only nginx, not api/postgres/redis — those aren't needed to
+# serve the ACME challenge and may not be configured yet during initial setup.
+docker compose -f docker-compose.prod.yml up -d --no-deps nginx
 
 echo "==> Waiting for nginx to be ready..."
-sleep 3
+for i in $(seq 1 30); do
+  # curl exits 0 on any HTTP response (including 301); non-zero means no connection yet.
+  if curl -s -o /dev/null http://localhost/; then
+    echo "   nginx is ready."
+    break
+  fi
+  if [ "$i" -eq 30 ]; then
+    echo "ERROR: nginx did not become ready after 30s. Check logs with:"
+    echo "  docker compose -f deploy/docker-compose.prod.yml logs nginx"
+    exit 1
+  fi
+  sleep 1
+done
 
 # Obtain real Let's Encrypt certificates for each domain.
 for domain in "${DOMAINS[@]}"; do
