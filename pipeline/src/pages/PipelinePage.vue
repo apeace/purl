@@ -8,8 +8,12 @@
         v-for="(stage, i) in stages"
         :key="stage.title"
         v-bind="stage"
+        :dragging-id="draggingId"
         :delay="150 + i * 100"
         @select="selectedTicketId = $event"
+        @drag-start="draggingId = $event"
+        @drag-end="draggingId = null"
+        @drop="onDrop"
       />
     </div>
     <TicketModal :ticket-id="selectedTicketId" @close="selectedTicketId = null" />
@@ -22,9 +26,15 @@ import PipelineStage from "../components/PipelineStage.vue"
 import TicketModal from "../components/TicketModal.vue"
 import { useTickets } from "../composables/useTickets.js"
 
-const { tickets } = useTickets()
+const { tickets, setStatus } = useTickets()
 
 const selectedTicketId = ref(null)
+const draggingId = ref(null)
+
+function onDrop({ ticketId, status }) {
+  draggingId.value = null
+  setStatus(ticketId, status)
+}
 
 const stageDefs = [
   { status: "new", title: "New", color: "#38bdf8" },
@@ -42,6 +52,7 @@ const stages = computed(() =>
       title: def.title,
       count: items.length,
       color: def.color,
+      status: def.status,
       items: items.map((t) => ({
         id: t.id,
         name: t.name,
