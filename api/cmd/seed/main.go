@@ -101,6 +101,8 @@ var commentBodies = []string{
 	"Spoke with the reporter — they can live with this for now.",
 }
 
+const seedAPIKey = "deadbeef000000000000000000000001cafebabe000000000000000000000002"
+
 func pick(s []string) string { return s[rand.Intn(len(s))] }
 
 func main() {
@@ -133,13 +135,24 @@ func main() {
 	}
 	log.Println("reset and migrated")
 
+	// Organization
+	var orgID string
+	err = db.QueryRow(
+		`INSERT INTO organizations (name, api_key) VALUES ($1, $2) RETURNING id`,
+		"Acme Corp", seedAPIKey,
+	).Scan(&orgID)
+	if err != nil {
+		log.Fatalf("insert org: %v", err)
+	}
+	log.Printf("inserted org (api_key: %s)", seedAPIKey)
+
 	// Users
 	userIDs := make([]string, 0, len(users))
 	for _, u := range users {
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO users (email, name) VALUES ($1, $2) RETURNING id`,
-			u.email, u.name,
+			`INSERT INTO users (email, name, org_id) VALUES ($1, $2, $3) RETURNING id`,
+			u.email, u.name, orgID,
 		).Scan(&id)
 		if err != nil {
 			log.Fatalf("insert user %s: %v", u.email, err)
@@ -162,8 +175,8 @@ func main() {
 
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6)
+			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id)
+			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7)
 			 RETURNING id`,
 			pick(titles),
 			pick(descriptions),
@@ -171,6 +184,7 @@ func main() {
 			pick(priorities),
 			reporterID,
 			assigneeID,
+			orgID,
 		).Scan(&id)
 		if err != nil {
 			log.Fatalf("insert ticket: %v", err)
