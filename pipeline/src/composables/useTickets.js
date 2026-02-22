@@ -1,4 +1,5 @@
 import { computed, reactive, ref } from "vue"
+import { apiFetch } from "../utils/api.js"
 
 const CURRENT_USER = "Alex Chen"
 
@@ -281,7 +282,7 @@ function updateNotes(id, text) {
 // ── Data fetching ────────────────────────────────────────
 
 async function loadTickets() {
-  const res = await fetch("http://localhost:8080/tickets")
+  const res = await apiFetch("/tickets")
   const data = await res.json()
   tickets.value = data.map(toTicket)
 }

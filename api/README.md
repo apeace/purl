@@ -13,7 +13,7 @@ cp api/.env.example api/.env
 docker-compose up --build
 ```
 
-This starts the API on port `8080`, along with Postgres (port `5432`) and Redis (port `6379`). The API waits for both to be healthy before starting.
+This starts the API on port `9090`, along with Postgres (port `5433`) and Redis (port `6380`). The API waits for both to be healthy before starting.
 
 ### Locally
 
@@ -31,7 +31,7 @@ go run .
 ## Health check
 
 ```bash
-curl localhost:8080/health
+curl localhost:9090/health
 ```
 
 Returns `200 OK` when both Postgres and Redis are reachable, `503` otherwise.
