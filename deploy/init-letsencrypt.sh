@@ -17,23 +17,6 @@ docker volume create "$CERTS_VOLUME" >/dev/null
 # certbot_www is used by the renewal certbot service in docker-compose.prod.yml
 docker volume create "$WWW_VOLUME" >/dev/null
 
-# Generate temporary self-signed certs so nginx can start before real certs exist.
-echo "==> Generating temporary self-signed certificates..."
-for domain in "${DOMAINS[@]}"; do
-  docker run --rm \
-    -v "$CERTS_VOLUME:/etc/letsencrypt" \
-    alpine:3.21 \
-    sh -c "
-      apk add --no-cache openssl >/dev/null 2>&1
-      mkdir -p /etc/letsencrypt/live/${domain}
-      openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
-        -keyout /etc/letsencrypt/live/${domain}/privkey.pem \
-        -out    /etc/letsencrypt/live/${domain}/fullchain.pem \
-        -subj '/CN=${domain}' >/dev/null 2>&1
-    "
-  echo "   Generated self-signed cert for ${domain}"
-done
-
 # Obtain real Let's Encrypt certificates using standalone mode.
 # Certbot binds port 80 itself — no nginx required during initial cert acquisition.
 for domain in "${DOMAINS[@]}"; do
