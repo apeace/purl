@@ -2,3 +2,5 @@
 # compiled binaries
 api
 server
+# air live-reload output
+tmp/
