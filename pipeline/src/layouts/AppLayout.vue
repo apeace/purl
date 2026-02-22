@@ -151,7 +151,7 @@ const cmdInput = ref(null)
 
 const mainNav = [
   { path: "/go", label: "Go", icon: Zap },
-  { path: "/pipeline", label: "Pipeline", icon: Workflow },
+  { path: "/kanban", label: "Kanban", icon: Workflow },
   { path: "/inbox", label: "Inbox", icon: Inbox },
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/reporting", label: "Reporting", icon: BarChart3 },
@@ -159,7 +159,7 @@ const mainNav = [
 
 const cmdItems = [
   "Dashboard Overview",
-  "Pipeline — Active Deals",
+  "Kanban — Active Deals",
   "Inbox — Unread Messages",
   "Revenue Report Q4",
 ]

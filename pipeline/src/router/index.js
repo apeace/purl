@@ -3,7 +3,7 @@ import DashboardPage from "../pages/DashboardPage.vue"
 import GoPage from "../pages/GoPage.vue"
 import InboxPage from "../pages/InboxPage.vue"
 import LoginPage from "../pages/LoginPage.vue"
-import PipelinePage from "../pages/PipelinePage.vue"
+import KanbanPage from "../pages/KanbanPage.vue"
 import ReportingPage from "../pages/ReportingPage.vue"
 import SettingsPage from "../pages/SettingsPage.vue"
 
@@ -12,7 +12,7 @@ const routes = [
   { path: "/go", component: GoPage },
   { path: "/dashboard", component: DashboardPage },
   { path: "/login", component: LoginPage, meta: { public: true } },
-  { path: "/pipeline", component: PipelinePage },
+  { path: "/kanban", component: KanbanPage },
   { path: "/inbox", component: InboxPage },
   { path: "/reporting", component: ReportingPage },
   { path: "/settings", component: SettingsPage },

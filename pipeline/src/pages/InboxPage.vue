@@ -1,6 +1,7 @@
 <template>
   <div class="inbox">
 
+    <template v-if="!selectedTicketId">
     <!-- Sticky header: tabs + toolbar -->
     <div class="inbox-header">
     <InboxTabs v-model="activeTab" />
@@ -243,16 +244,70 @@
         </div>
       </TransitionGroup>
     </div>
+    </template>
 
-    <TicketModal :ticket-id="selectedTicketId" @close="selectedTicketId = null" />
+    <!-- Split view (ticket selected) -->
+    <div v-else class="inbox-split">
+      <div class="workspace">
+        <div class="workspace-active">
+          <div class="strategy-bar">
+            <button class="strategy-header" @click="selectedTicketId = null">
+              <Inbox :size="16" style="color: #60a5fa" />
+              <span class="strategy-header-label">Inbox</span>
+            </button>
+            <div class="strategy-nav">
+              <span class="strategy-nav-pos">{{ queueIndex + 1 }} / {{ emails.length }}</span>
+              <button class="strategy-nav-btn" :disabled="!canGoPrev" @click="goPrev">
+                <ChevronLeft :size="18" />
+              </button>
+              <button class="strategy-nav-btn" :disabled="!canGoNext" @click="goNext">
+                <ChevronRight :size="18" />
+              </button>
+            </div>
+          </div>
+          <TicketDetail :ticket-id="selectedTicketId" @resolve="handleResolve" />
+        </div>
+      </div>
+      <div class="queue-panel">
+        <div class="queue-list">
+          <div class="queue-section-label">Up next</div>
+          <button
+            v-for="item in displayQueue"
+            :key="item.id"
+            class="queue-card"
+            @click="openEmail(item)"
+          >
+            <div class="qcard-top">
+              <div class="qcard-avatar" :style="{ background: item.sender.color }">
+                {{ item.sender.name[0] }}
+              </div>
+              <div class="qcard-meta">
+                <div class="qcard-name">{{ item.sender.name }}
+                  <span v-if="item.company" class="qcard-company">· {{ item.company }}</span>
+                </div>
+                <div class="qcard-subject">{{ item.subject }}</div>
+              </div>
+            </div>
+            <div class="qcard-footer">
+              <span class="qcard-wait">
+                <Clock :size="11" /> {{ item.wait }}
+              </span>
+              <span class="qcard-priority" :class="`qcard-priority--${item.priority}`">
+                {{ item.priority }}
+              </span>
+            </div>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
+import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Clock, Inbox, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
-import TicketModal from "../components/TicketModal.vue"
+import TicketDetail from "../components/TicketDetail.vue"
 import { useTickets } from "../composables/useTickets.js"
 import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors.js"
 
@@ -265,6 +320,7 @@ const {
   filterPriorities,
   filterStatuses,
   markRead,
+  resolveTicket,
   sortBy,
   sortedTickets,
   toggleStar,
@@ -309,8 +365,24 @@ function onPointerDown(e) {
   }
 }
 
-onMounted(() => document.addEventListener("pointerdown", onPointerDown))
-onBeforeUnmount(() => document.removeEventListener("pointerdown", onPointerDown))
+function onKeydown(e) {
+  if (e.key === "Escape") {
+    if (selectedTicketId.value) {
+      selectedTicketId.value = null
+    } else if (openDropdown.value) {
+      openDropdown.value = null
+    }
+  }
+}
+
+onMounted(() => {
+  document.addEventListener("pointerdown", onPointerDown)
+  document.addEventListener("keydown", onKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener("pointerdown", onPointerDown)
+  document.removeEventListener("keydown", onKeydown)
+})
 
 const priorityColors = PRIORITY_COLORS
 const statusColors = STATUS_PILL
@@ -355,7 +427,9 @@ const emails = computed(() => {
     status: t.status,
     assignee: t.assignee,
     assigneeColor: t.assignee !== "Unassigned" ? avatarColor(t.assignee) : null,
+    company: t.company,
     createdAt: t.createdAt,
+    wait: t.wait,
   }))
 })
 
@@ -408,6 +482,35 @@ function openEmail(email) {
 
 function handleToggleStar(email) {
   toggleStar(email.id)
+}
+
+// ── Queue navigation ─────────────────────────────────
+
+const queueIndex = computed(() => emails.value.findIndex((e) => e.id === selectedTicketId.value))
+const canGoPrev = computed(() => queueIndex.value > 0)
+const canGoNext = computed(() => queueIndex.value < emails.value.length - 1)
+const displayQueue = computed(() => emails.value.filter((e) => e.id !== selectedTicketId.value))
+
+function goPrev() {
+  if (canGoPrev.value) {
+    const prev = emails.value[queueIndex.value - 1]
+    markRead(prev.id)
+    selectedTicketId.value = prev.id
+  }
+}
+
+function goNext() {
+  if (canGoNext.value) {
+    const next = emails.value[queueIndex.value + 1]
+    markRead(next.id)
+    selectedTicketId.value = next.id
+  }
+}
+
+function handleResolve() {
+  const next = displayQueue.value[0] ?? null
+  resolveTicket(selectedTicketId.value)
+  selectedTicketId.value = next ? next.id : null
 }
 
 // ── Refresh ──────────────────────────────────────────────
@@ -949,6 +1052,237 @@ function refresh() {
   }
 }
 
+/* ── Split view ─────────────────────────────────────────── */
+
+.inbox-split {
+  display: flex;
+  height: 100dvh;
+}
+
+.workspace {
+  flex: 7;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.workspace-active {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: content-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes content-up {
+  from { opacity: 0; transform: translateY(12px); }
+}
+
+/* ── Strategy bar ─────────────────────────────────────── */
+
+.strategy-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.strategy-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: none;
+  border: none;
+  padding: 12px 20px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+  border-radius: 0;
+}
+
+.strategy-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.strategy-header-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.strategy-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 12px;
+}
+
+.strategy-nav-pos {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.45);
+  margin-right: 8px;
+}
+
+.strategy-nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+  color: #e2e8f0;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.strategy-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.strategy-nav-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+/* ── Queue panel ──────────────────────────────────────── */
+
+.queue-panel {
+  flex: 3;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.queue-list {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+}
+
+.queue-section-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(148, 163, 184, 0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.queue-card {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 14px;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.queue-card:hover,
+.queue-card:active {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.qcard-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+
+.qcard-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.qcard-meta {
+  min-width: 0;
+}
+
+.qcard-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.qcard-company {
+  font-weight: 400;
+  color: rgba(148, 163, 184, 0.5);
+}
+
+.qcard-subject {
+  font-size: 14px;
+  color: rgba(148, 163, 184, 0.6);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qcard-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.qcard-wait {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.4);
+}
+
+.qcard-priority {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 5px;
+  text-transform: capitalize;
+}
+
+.qcard-priority--urgent {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.qcard-priority--high {
+  background: rgba(239, 68, 68, 0.1);
+  color: #fca5a5;
+}
+
+.qcard-priority--medium {
+  background: rgba(245, 158, 11, 0.1);
+  color: #fcd34d;
+}
+
+.qcard-priority--low {
+  background: rgba(52, 211, 153, 0.1);
+  color: #6ee7b7;
+}
+
 /* ── Mobile ──────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
@@ -974,6 +1308,21 @@ function refresh() {
   .assignee-avatar,
   .assignee-spacer {
     display: none;
+  }
+
+  .inbox-split {
+    flex-direction: column;
+    height: auto;
+  }
+
+  .workspace-active {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    height: 65dvh;
+  }
+
+  .queue-panel {
+    max-height: 60dvh;
   }
 }
 </style>
