@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Your email for Let's Encrypt expiry notifications.
-EMAIL="you@example.com"
+EMAIL="info@zeddunlimited.com"
 
 DOMAINS=("app.justpurl.com" "api.justpurl.com")
 
