@@ -402,7 +402,7 @@
 
 <script setup>
 import { ChevronLeft, ChevronRight, Clock, Cog, Flame, History, Hourglass, ListOrdered, Mail, MessageSquare, Phone, Send, Sparkles, User, Users, Zap } from "lucide-vue-next"
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onMounted, ref, watch } from "vue"
 import { useTickets } from "../composables/useTickets.js"
 
 const {
@@ -412,6 +412,7 @@ const {
   hudLongestWait,
   hudOpen,
   hudResolvedToday,
+  loadTickets,
   openTickets: threads,
   parseWait,
   removeTag,
@@ -423,6 +424,8 @@ const {
   setTemperature,
   updateNotes,
 } = useTickets()
+
+onMounted(() => loadTickets())
 
 const DAILY_GOAL = 20
 

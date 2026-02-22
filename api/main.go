@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -85,14 +86,67 @@ func main() {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(corsMiddleware)
 
 	r.Get("/health", a.health)
+	r.Get("/tickets", a.listTickets)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("listening on %s", addr)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type ticketRow struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	Status       string    `json:"status"`
+	Priority     string    `json:"priority"`
+	ReporterName string    `json:"reporter_name"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+func (a *app) listTickets(w http.ResponseWriter, r *http.Request) {
+	rows, err := a.db.QueryContext(r.Context(), `
+		SELECT t.id, t.title, t.description, t.status, t.priority, u.name, t.created_at
+		FROM tickets t
+		JOIN users u ON u.id = t.reporter_id
+		ORDER BY t.created_at DESC
+	`)
+	if err != nil {
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		log.Printf("listTickets query: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	tickets := []ticketRow{}
+	for rows.Next() {
+		var t ticketRow
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.ReporterName, &t.CreatedAt); err != nil {
+			http.Error(w, "scan failed", http.StatusInternalServerError)
+			log.Printf("listTickets scan: %v", err)
+			return
+		}
+		tickets = append(tickets, t)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tickets)
 }
 
 func (a *app) health(w http.ResponseWriter, r *http.Request) {
