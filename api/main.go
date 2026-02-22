@@ -9,13 +9,11 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 	"github.com/redis/go-redis/v9"
-	httpSwagger "github.com/swaggo/http-swagger"
 	_ "purl/api/docs"
+	"purl/api/internal/app"
 )
 
 //go:embed migrations/*.sql
@@ -48,12 +46,6 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-type app struct {
-	db    *sql.DB
-	redis *redis.Client
-	cfg   config
 }
 
 // @title           Purl API
@@ -96,28 +88,11 @@ func main() {
 	}
 	log.Println("connected to redis")
 
-	a := &app{db: db, redis: rdb, cfg: cfg}
-
-	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(corsMiddleware)
-
-	r.Get("/docs/*", httpSwagger.Handler())
-	r.Get("/health", a.health)
-	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	r.Group(func(r chi.Router) {
-		r.Use(a.requireAPIKey)
-		r.Get("/org", a.getOrg)
-		r.Get("/tickets", a.listTickets)
-	})
+	a := app.New(db, rdb)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("listening on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	if err := http.ListenAndServe(addr, a.Handler()); err != nil {
 		log.Fatalf("serve: %v", err)
 	}
 }

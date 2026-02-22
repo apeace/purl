@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -34,7 +34,7 @@ func orgFromContext(ctx context.Context) org {
 	return ctx.Value(orgContextKey).(org)
 }
 
-func (a *app) requireAPIKey(next http.Handler) http.Handler {
+func (a *App) requireAPIKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("x-api-key")
 		if key == "" {

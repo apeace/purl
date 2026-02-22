@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ import (
 // @Success     200  {object}  map[string]any
 // @Failure     503  {object}  map[string]any
 // @Router      /health [get]
-func (a *app) health(w http.ResponseWriter, r *http.Request) {
+func (a *App) health(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	dbOK := a.db.PingContext(ctx) == nil

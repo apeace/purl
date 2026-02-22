@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ type orgResponse struct {
 // @Failure     401  {string}  string  "Unauthorized"
 // @Security    ApiKeyAuth
 // @Router      /org [get]
-func (a *app) getOrg(w http.ResponseWriter, r *http.Request) {
+func (a *App) getOrg(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(orgResponse{ID: o.ID, Name: o.Name, Foo: "bar"})

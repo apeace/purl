@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"encoding/json"
@@ -24,7 +24,7 @@ type ticketRow struct {
 // @Failure     401  {string}  string  "Unauthorized"
 // @Security    ApiKeyAuth
 // @Router      /tickets [get]
-func (a *app) listTickets(w http.ResponseWriter, r *http.Request) {
+func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	rows, err := a.db.QueryContext(r.Context(), `
 		SELECT t.id, t.title, t.description, t.status, t.priority, u.name, t.created_at
