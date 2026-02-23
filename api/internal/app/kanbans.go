@@ -38,6 +38,7 @@ type updateKanbanRequest struct {
 }
 
 // @Summary     Update a Kanban board
+// @Tags        Kanbans
 // @Description Updates the name of a Kanban board
 // @Accept      json
 // @Produce     json
@@ -84,6 +85,7 @@ func (a *App) updateKanban(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary     Create a Kanban board
+// @Tags        Kanbans
 // @Description Creates a new Kanban board for the org
 // @Accept      json
 // @Produce     json
@@ -125,6 +127,7 @@ func (a *App) createKanban(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary     List Kanban boards
+// @Tags        Kanbans
 // @Description Returns all Kanban boards for the org, with columns nested, ordered by default first then name
 // @Produce     json
 // @Success     200  {array}   kanbanBoard
@@ -238,6 +241,7 @@ type putColumnItem struct {
 }
 
 // @Summary     Replace board columns
+// @Tags        Kanbans
 // @Description Atomically replaces all columns on a Kanban board.
 // @Description Columns with an id are updated; columns without an id are created;
 // @Description columns present in the database but absent from the request are deleted.
@@ -403,6 +407,7 @@ func (a *App) requireColumnInBoard(w http.ResponseWriter, r *http.Request, board
 }
 
 // @Summary     Replace column tickets
+// @Tags        Kanbans
 // @Description Atomically sets the ordered list of tickets in a column.
 // @Description Tickets are placed at positions matching their array index.
 // @Description A ticket already in another column on this board is moved here.
@@ -514,6 +519,7 @@ type kanbanTicketRow struct {
 }
 
 // @Summary     List tickets on a Kanban board
+// @Tags        Kanbans
 // @Description Returns all tickets placed on the board, ordered by column then position.
 // @Description Each row includes column_id and position so the client can reconstruct per-column ordering.
 // @Produce     json

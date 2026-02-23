@@ -12,6 +12,7 @@ type orgResponse struct {
 }
 
 // @Summary     Get current organization
+// @Tags        Organization
 // @Description Returns the organization associated with the provided API key
 // @Produce     json
 // @Success     200  {object}  orgResponse
