@@ -3,7 +3,7 @@
   <AppLayout v-else />
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { useRoute } from "vue-router"
 import AppLayout from "./layouts/AppLayout.vue"
 

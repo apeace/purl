@@ -1,7 +1,7 @@
-<script setup>
+<script setup lang="ts">
 import { ref } from "vue"
 import { useRouter } from "vue-router"
-import { setApiKey } from "../utils/api.js"
+import { setApiKey } from "../utils/api"
 
 const router = useRouter()
 const apiKey = ref("")

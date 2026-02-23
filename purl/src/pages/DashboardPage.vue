@@ -108,12 +108,12 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
 import StatCard from "../components/StatCard.vue"
-import { useTickets } from "../composables/useTickets.js"
-import { PRIORITY_COLORS } from "../utils/colors.js"
+import { useTickets } from "../composables/useTickets"
+import { PRIORITY_COLORS } from "../utils/colors"
 
 const { hudOpen, hudResolvedToday, tickets } = useTickets()
 
@@ -134,7 +134,7 @@ const openChange = computed(() => {
 const priorityBreakdown = computed(() => {
   const open = tickets.value.filter((t) => t.status !== "closed" && t.status !== "solved")
   const total = open.length || 1
-  const counts = { urgent: 0, high: 0, medium: 0, low: 0 }
+  const counts: Record<string, number> = { urgent: 0, high: 0, medium: 0, low: 0 }
   for (const t of open) {
     if (counts[t.priority] !== undefined) counts[t.priority]++
   }

@@ -11,15 +11,17 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, ref } from "vue"
 
-const props = defineProps({
-  name: String,
-  action: String,
-  time: String,
-  color: String,
-  delay: { type: Number, default: 0 },
+const props = withDefaults(defineProps<{
+  name: string
+  action: string
+  time: string
+  color: string
+  delay?: number
+}>(), {
+  delay: 0,
 })
 
 const visible = ref(false)

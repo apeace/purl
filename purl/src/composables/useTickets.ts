@@ -1,26 +1,77 @@
 import { computed, reactive, ref } from "vue"
 import { getTickets } from "@purl/lib"
-import "../utils/api.js"
+import type { AppTicketRow } from "@purl/lib"
+import "../utils/api"
 
 const CURRENT_USER = "Alex Chen"
 
+// ── Types ───────────────────────────────────────────────
+
+export interface Message {
+  id: number
+  from: string
+  channel: string
+  time: string
+  text: string
+  type?: string
+  recording?: {
+    duration: number
+    waveform: number[]
+    transcript: { speaker: string; time: string; text: string }[]
+  }
+}
+
+export interface Ticket {
+  id: string
+  name: string
+  company: string
+  ticketId: string
+  subject: string
+  priority: string
+  createdAt: string
+  wait: string
+  avatarColor: string
+  status: string
+  read: boolean
+  starred: boolean
+  labels: string[]
+  time: string
+  email: string
+  phone: string
+  subscription: { status: string; id: string; plan: string }
+  tags: string[]
+  temperature: string
+  assignee: string
+  notes: string
+  messages: Message[]
+  ticketHistory: { time: string; event: string }[]
+  subscriberHistory: { ticketId: string; status: string; subject: string; date: string }[]
+}
+
+export interface AiSuggestion {
+  headline: string
+  body: string
+  action: string
+  replyText: string
+}
+
 // ── Helpers ──────────────────────────────────────────────
 
-const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 }
-const STATUS_ORDER = { escalated: 0, new: 1, open: 2, pending: 3, solved: 4, closed: 5 }
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+const STATUS_ORDER: Record<string, number> = { escalated: 0, new: 1, open: 2, pending: 3, solved: 4, closed: 5 }
 
 const AVATAR_COLORS = [
   "#6366f1", "#ec4899", "#34d399", "#f59e0b",
   "#3b82f6", "#a855f7", "#ef4444", "#14b8a6",
 ]
 
-function avatarColor(name) {
+function avatarColor(name: string): string {
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
 }
 
-function formatWait(createdAt) {
+function formatWait(createdAt: string): string {
   const mins = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
   if (mins < 60) return `${mins}m`
   const hrs = Math.floor(mins / 60)
@@ -28,38 +79,42 @@ function formatWait(createdAt) {
   return rem ? `${hrs}h ${rem}m` : `${hrs}h`
 }
 
-function formatTime(createdAt) {
+function formatTime(createdAt: string): string {
   return new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
 }
 
-function toTicket(t) {
+function toTicket(t: AppTicketRow): Ticket {
+  const id = t.id ?? ""
+  const reporterName = t.reporter_name ?? ""
+  const createdAt = t.created_at ?? ""
+  const description = t.description ?? ""
   return {
-    id: t.id,
-    name: t.reporter_name,
+    id,
+    name: reporterName,
     company: "",
-    ticketId: `#${t.id.slice(0, 6).toUpperCase()}`,
-    subject: t.title,
-    priority: t.priority,
-    createdAt: t.created_at,
-    wait: formatWait(t.created_at),
-    avatarColor: avatarColor(t.reporter_name),
-    status: t.status,
+    ticketId: `#${id.slice(0, 6).toUpperCase()}`,
+    subject: t.title ?? "",
+    priority: t.priority ?? "",
+    createdAt,
+    wait: formatWait(createdAt),
+    avatarColor: avatarColor(reporterName),
+    status: t.status ?? "",
     read: false,
     starred: false,
     labels: [],
-    time: formatTime(t.created_at),
+    time: formatTime(createdAt),
     email: "",
     phone: "",
     subscription: { status: "active", id: "", plan: "" },
     tags: [],
     temperature: "warm",
-    assignee: t.assignee_name ?? "Unassigned",
+    assignee: (t as AppTicketRow & { assignee_name?: string }).assignee_name ?? "Unassigned",
     notes: "",
-    messages: t.description
-      ? [{ id: 1, from: "customer", channel: "email", time: formatWait(t.created_at), text: t.description }]
+    messages: description
+      ? [{ id: 1, from: "customer", channel: "email", time: formatWait(createdAt), text: description }]
       : [],
     ticketHistory: [
-      { time: formatWait(t.created_at), event: "Ticket created" },
+      { time: formatWait(createdAt), event: "Ticket created" },
     ],
     subscriberHistory: [],
   }
@@ -67,10 +122,10 @@ function toTicket(t) {
 
 // ── Module-level state (shared across all consumers) ────
 
-const tickets = ref([])
+const tickets = ref<Ticket[]>([])
 
 // Suggestions keyed by index — mapped to real ticket IDs via aiSuggestions computed
-const aiSuggestionsList = [
+const aiSuggestionsList: AiSuggestion[] = [
   {
     headline: "Config 404 — matches known post-update bug",
     body: "Sarah's error is identical to 3 tickets resolved last week after the v2.4 rollout. A missing config.json is caused by the new deploy script skipping static asset copy. Send the one-line fix and mark resolved.",
@@ -99,7 +154,7 @@ const aiSuggestionsList = [
 
 // Maps real ticket IDs to suggestions based on load order
 const aiSuggestions = computed(() => {
-  const map = {}
+  const map: Record<string, AiSuggestion> = {}
   tickets.value.forEach((t, i) => {
     if (i < aiSuggestionsList.length) map[t.id] = aiSuggestionsList[i]
   })
@@ -111,9 +166,9 @@ const resolvedToday = ref(8)
 // ── Filters ─────────────────────────────────────────────
 
 const filterKeyword = ref("")
-const filterPriorities = reactive(new Set())
-const filterAssignees = reactive(new Set())
-const filterStatuses = reactive(new Set())
+const filterPriorities = reactive(new Set<string>())
+const filterAssignees = reactive(new Set<string>())
+const filterStatuses = reactive(new Set<string>())
 
 const filteredTickets = computed(() => {
   let result = tickets.value
@@ -199,7 +254,7 @@ const hudResolvedToday = computed(() => resolvedToday.value)
 
 // ── Helpers ─────────────────────────────────────────────
 
-function parseWait(str) {
+function parseWait(str: string): number {
   let mins = 0
   const d = str.match(/(\d+)d/)
   const h = str.match(/(\d+)h/)
@@ -212,36 +267,35 @@ function parseWait(str) {
 
 // ── Mutations ───────────────────────────────────────────
 
-function resolveTicket(id) {
+function resolveTicket(id: string) {
   const ticket = tickets.value.find((t) => t.id === id)
-  if (ticket) {
-    ticket.status = "solved"
-    ticket.read = true
-    resolvedToday.value++
-  }
+  if (!ticket || ticket.status === "solved" || ticket.status === "closed") return
+  ticket.status = "solved"
+  ticket.read = true
+  resolvedToday.value++
 }
 
-function archiveTicket(id) {
-  const ticket = tickets.value.find((t) => t.id === id)
-  if (ticket) ticket.status = "closed"
-}
-
-function deleteTicket(id) {
+function archiveTicket(id: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.status = "closed"
 }
 
-function markRead(id) {
+function deleteTicket(id: string) {
+  const ticket = tickets.value.find((t) => t.id === id)
+  if (ticket) ticket.status = "closed"
+}
+
+function markRead(id: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.read = true
 }
 
-function toggleStar(id) {
+function toggleStar(id: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.starred = !ticket.starred
 }
 
-function sendReply(id, text, channel = "email") {
+function sendReply(id: string, text: string, channel = "email") {
   const ticket = tickets.value.find((t) => t.id === id)
   if (!ticket) return
   ticket.messages.push({
@@ -254,38 +308,38 @@ function sendReply(id, text, channel = "email") {
   ticket.read = true
 }
 
-function followAi(id) {
+function followAi(id: string) {
   const suggestion = aiSuggestions.value[id]
   if (!suggestion) return
   sendReply(id, suggestion.replyText)
 }
 
-function setStatus(id, status) {
+function setStatus(id: string, status: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.status = status
 }
 
-function setAssignee(id, assignee) {
+function setAssignee(id: string, assignee: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.assignee = assignee
 }
 
-function setTemperature(id, temperature) {
+function setTemperature(id: string, temperature: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.temperature = temperature
 }
 
-function addTag(id, tag) {
+function addTag(id: string, tag: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket && !ticket.tags.includes(tag)) ticket.tags.push(tag)
 }
 
-function removeTag(id, tag) {
+function removeTag(id: string, tag: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.tags = ticket.tags.filter((t) => t !== tag)
 }
 
-function updateNotes(id, text) {
+function updateNotes(id: string, text: string) {
   const ticket = tickets.value.find((t) => t.id === id)
   if (ticket) ticket.notes = text
 }
@@ -294,7 +348,7 @@ function updateNotes(id, text) {
 
 async function loadTickets() {
   const { data } = await getTickets()
-  tickets.value = data.map(toTicket)
+  if (data) tickets.value = data.map(toTicket)
 }
 
 // ── Public composable ───────────────────────────────────

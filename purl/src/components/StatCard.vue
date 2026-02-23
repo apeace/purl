@@ -13,17 +13,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, ref } from "vue"
 import Sparkline from "./Sparkline.vue"
 
-const props = defineProps({
-  label: String,
-  value: String,
-  change: Number,
-  color: { type: String, default: "#818cf8" },
-  data: Array,
-  delay: { type: Number, default: 0 },
+const props = withDefaults(defineProps<{
+  label: string
+  value: string
+  change: number
+  color?: string
+  data: number[]
+  delay?: number
+}>(), {
+  color: "#818cf8",
+  delay: 0,
 })
 
 const visible = ref(false)

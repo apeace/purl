@@ -9,17 +9,21 @@
   </Transition>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { onMounted, onUnmounted, watch } from "vue"
 import TicketDetail from "./TicketDetail.vue"
 
-const props = defineProps({
-  ticketId: { type: Number, default: null },
+const props = withDefaults(defineProps<{
+  ticketId?: string | null
+}>(), {
+  ticketId: null,
 })
 
-const emit = defineEmits(["close"])
+const emit = defineEmits<{
+  close: []
+}>()
 
-function onEsc(e) {
+function onEsc(e: KeyboardEvent) {
   if (e.key === "Escape" && props.ticketId) emit("close")
 }
 

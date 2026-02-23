@@ -92,10 +92,10 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { Search, SlidersHorizontal, X } from "lucide-vue-next"
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets.js"
+import { useTickets } from "../composables/useTickets"
 
 const {
   activeFilterCount,
@@ -111,10 +111,10 @@ const priorities = ["low", "medium", "high", "urgent"]
 const statuses = ["new", "open", "pending", "escalated", "solved", "closed"]
 
 const open = ref(false)
-const wrapEl = ref(null)
-const searchEl = ref(null)
+const wrapEl = ref<HTMLElement | null>(null)
+const searchEl = ref<HTMLInputElement | null>(null)
 
-function toggleSet(set, val) {
+function toggleSet(set: Set<string>, val: string) {
   if (set.has(val)) set.delete(val)
   else set.add(val)
 }
@@ -125,13 +125,13 @@ watch(open, (isOpen) => {
 })
 
 // Click outside to close
-function onClickOutside(e) {
-  if (open.value && wrapEl.value && !wrapEl.value.contains(e.target)) {
+function onClickOutside(e: PointerEvent) {
+  if (open.value && wrapEl.value && !wrapEl.value.contains(e.target as Node)) {
     open.value = false
   }
 }
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape" && open.value) open.value = false
 }
 

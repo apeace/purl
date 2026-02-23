@@ -4,18 +4,20 @@ import { fileURLToPath } from "url"
 import vue from "@vitejs/plugin-vue"
 import { defineConfig } from "vite"
 
+import type { Plugin, ViteDevServer } from "vite"
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SPEC_PATH = path.resolve(__dirname, "../api/docs/swagger.json")
 
-function apiClientPlugin() {
+function apiClientPlugin(): Plugin {
   return {
     name: "api-client-generator",
     buildStart() {
       execSync("npm run generate -w @purl/lib", { stdio: "inherit" })
     },
-    configureServer(server) {
+    configureServer(server: ViteDevServer) {
       server.watcher.add(SPEC_PATH)
-      server.watcher.on("change", (file) => {
+      server.watcher.on("change", (file: string) => {
         if (file !== SPEC_PATH) return
         execSync("npm run generate -w @purl/lib", { stdio: "inherit" })
         server.ws.send({ type: "full-reload" })

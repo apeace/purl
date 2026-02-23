@@ -90,22 +90,22 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import { useTickets } from "../composables/useTickets.js"
-import { STATUS_COLORS } from "../utils/colors.js"
+import { useTickets } from "../composables/useTickets"
+import { STATUS_COLORS } from "../utils/colors"
 
 const { filteredTickets, resolveTicket, setStatus } = useTickets()
 
-const selectedTicketId = ref(null)
-const draggingId = ref(null)
+const selectedTicketId = ref<string | null>(null)
+const draggingId = ref<string | null>(null)
 const searchQuery = ref("")
 
-function onDrop({ ticketId, status }) {
+function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
   draggingId.value = null
   setStatus(ticketId, status)
 }
@@ -191,11 +191,11 @@ function goNext() {
 
 function handleResolve() {
   const next = displayQueue.value[0] ?? null
-  resolveTicket(selectedTicketId.value)
+  resolveTicket(selectedTicketId.value!)
   selectedTicketId.value = next ? next.id : null
 }
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape" && selectedTicketId.value) {
     selectedTicketId.value = null
   }

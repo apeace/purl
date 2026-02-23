@@ -17,6 +17,7 @@ RUN npm ci
 COPY lib/ ./lib/
 COPY purl/ ./purl/
 COPY --from=api-docs /app/docs/ ./api/docs/
+RUN npm run generate -w @purl/lib
 ENV VITE_API_URL=https://api.justpurl.com
 RUN npm run build -w @purl/purl
 

@@ -33,12 +33,12 @@
                   <div class="preview-label">Up next</div>
                   <div class="preview-ticket">
                     <div class="preview-ticket-top">
-                      <div class="preview-avatar" :style="{ background: cardPreviews[opt.id].avatarColor }">{{ cardPreviews[opt.id].name[0] }}</div>
-                      <span class="preview-name">{{ cardPreviews[opt.id].name }}</span>
-                      <span class="preview-badge" :class="`preview-badge--${cardPreviews[opt.id].priority}`">{{ cardPreviews[opt.id].priority }}</span>
+                      <div class="preview-avatar" :style="{ background: cardPreviews[opt.id]!.avatarColor }">{{ cardPreviews[opt.id]!.name[0] }}</div>
+                      <span class="preview-name">{{ cardPreviews[opt.id]!.name }}</span>
+                      <span class="preview-badge" :class="`preview-badge--${cardPreviews[opt.id]!.priority}`">{{ cardPreviews[opt.id]!.priority }}</span>
                     </div>
-                    <div class="preview-subject">{{ cardPreviews[opt.id].subject }}</div>
-                    <div class="preview-summary">{{ cardPreviews[opt.id].messages[0].text }}</div>
+                    <div class="preview-subject">{{ cardPreviews[opt.id]!.subject }}</div>
+                    <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0]?.text }}</div>
                   </div>
                 </div>
               </button>
@@ -65,7 +65,7 @@
             </div>
           </div>
 
-          <TicketDetail :ticket-id="activeId" @resolve="resolve" />
+          <TicketDetail :ticket-id="activeId!" @resolve="resolve" />
         </div>
       </div>
 
@@ -128,12 +128,13 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { computed, onMounted, ref, watch } from "vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import { useTickets } from "../composables/useTickets.js"
+import type { Ticket } from "../composables/useTickets"
+import { useTickets } from "../composables/useTickets"
 
 const {
   aiSuggestions,
@@ -160,14 +161,14 @@ const priorityOptions = [
 
 // ── State ────────────────────────────────────────────────
 
-const activeId = ref(null)
-const chosenPriority = ref(null)
+const activeId = ref<string | null>(null)
+const chosenPriority = ref<string | null>(null)
 
 const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
 const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
 const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
 
-const cardStats = computed(() => {
+const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const highCount = threads.value.filter((t) => t.priority === "high").length
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
@@ -178,8 +179,8 @@ const cardStats = computed(() => {
   }
 })
 
-const cardPreviews = computed(() => {
-  const priorityRank = { high: 0, medium: 1, low: 2 }
+const cardPreviews = computed<Record<string, Ticket | null>>(() => {
+  const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 }
   const all = [...threads.value]
 
   const urgent = [...all].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
@@ -198,7 +199,7 @@ const cardPreviews = computed(() => {
 const chosenOption = computed(() => priorityOptions.find((o) => o.id === chosenPriority.value) ?? null)
 
 const sortedQueue = computed(() => {
-  const priorityRank = { high: 0, medium: 1, low: 2 }
+  const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 }
   const all = [...threads.value]
   const id = chosenPriority.value
   if (id === "urgent") {
@@ -233,7 +234,7 @@ function goNext() {
   if (canGoNext.value) activeId.value = sortedQueue.value[queueIndex.value + 1].id
 }
 
-function choosePriority(opt) {
+function choosePriority(opt: typeof priorityOptions[number]) {
   chosenPriority.value = opt.id
   const first = cardPreviews.value[opt.id]
   if (first) {
@@ -244,7 +245,7 @@ function choosePriority(opt) {
 function resolve() {
   const currentId = activeId.value
   const nextThread = queue.value[0]
-  resolveTicket(currentId)
+  resolveTicket(currentId!)
   activeId.value = nextThread ? nextThread.id : null
 }
 

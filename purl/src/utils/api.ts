@@ -8,7 +8,7 @@ export function getApiKey() {
   return localStorage.getItem(API_KEY_STORAGE_KEY) ?? ""
 }
 
-export function setApiKey(key) {
+export function setApiKey(key: string) {
   localStorage.setItem(API_KEY_STORAGE_KEY, key)
 }
 
