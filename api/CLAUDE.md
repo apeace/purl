@@ -12,4 +12,5 @@ When API annotations change, the frontend container's Vite plugin regenerates th
 
 ## Verifying Compilation
 
-Use `go build ./path/to/package/...` to verify code compiles. This produces binary artifacts — always delete them when done (e.g. `rm api/cmd/pull-zendesk/pull-zendesk`).
+- **Library packages** (`internal/...`): `go build ./internal/app/...` — no artifact produced.
+- **Main packages** (`cmd/...`): `go build -o /dev/null ./cmd/pull-zendesk` — compiles and discards the binary, leaving no artifact behind. Never use `go build` without `-o /dev/null` on a main package.
