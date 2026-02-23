@@ -316,7 +316,7 @@
           <span class="action-label">Apply Credit</span>
           <span class="action-desc">Issue account credit</span>
         </button>
-        <button class="action-card" @click="emit('addToBoard', ticketId)">
+        <button v-if="showAddToBoard" class="action-card" @click="emit('addToBoard', ticketId)">
           <Columns3 :size="20" class="action-icon action-icon--indigo" />
           <span class="action-label">Add to Board</span>
           <span class="action-desc">Place on a custom board</span>
@@ -621,6 +621,7 @@ import type { Message } from "../composables/useTickets"
 
 const props = defineProps<{
   ticketId: string
+  showAddToBoard?: boolean
 }>()
 
 const emit = defineEmits<{

@@ -21,7 +21,7 @@
     <div class="stages-scroll">
       <KanbanStage
         v-for="(stage, i) in stages"
-        :key="stage.title"
+        :key="stage.status"
         v-bind="stage"
         :dragging-id="draggingId"
         :delay="150 + i * 100"
@@ -52,7 +52,7 @@
               </button>
             </div>
           </div>
-          <TicketDetail :ticket-id="selectedTicketId" @resolve="handleResolve" @add-to-board="handleAddToBoard" />
+          <TicketDetail :ticket-id="selectedTicketId" show-add-to-board @resolve="handleResolve" @add-to-board="handleAddToBoard" />
         </div>
       </div>
       <div class="queue-panel">
