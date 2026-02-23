@@ -151,7 +151,7 @@
 
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import type { Ticket } from "../composables/useTickets"
@@ -162,14 +162,11 @@ const {
   hudLongestWait,
   hudOpen,
   hudResolvedToday,
-  loadTickets,
   openTickets: threads,
   parseWait,
   resolveTicket,
   resolvedToday,
 } = useTickets()
-
-onMounted(() => loadTickets())
 
 const DAILY_GOAL = 20
 

@@ -346,10 +346,19 @@ function updateNotes(id: string, text: string) {
 
 // ── Data fetching ────────────────────────────────────────
 
+let loadPromise: Promise<void> | null = null
+
 async function loadTickets() {
-  const { data } = await getTickets()
-  if (data) tickets.value = data.map(toTicket)
+  if (!loadPromise) {
+    loadPromise = getTickets().then(({ data }) => {
+      if (data) tickets.value = data.map(toTicket)
+    })
+  }
+  return loadPromise
 }
+
+// Auto-load on first import
+loadTickets()
 
 // ── Public composable ───────────────────────────────────
 
