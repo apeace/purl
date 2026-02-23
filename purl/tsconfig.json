@@ -8,7 +8,7 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.vue",
-    "vite.config.ts",
     "env.d.ts"
-  ]
+  ],
+  "references": [{ "path": "./tsconfig.node.json" }]
 }
