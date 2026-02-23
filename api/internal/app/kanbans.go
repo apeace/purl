@@ -323,3 +323,125 @@ func (a *App) putKanbanColumns(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(columns)
 }
+
+// requireColumnInBoard checks that the column URL param exists and belongs to the board.
+// Returns the column ID on success, or writes a 404 and returns "".
+func (a *App) requireColumnInBoard(w http.ResponseWriter, r *http.Request, boardID string) string {
+	columnID := chi.URLParam(r, "columnID")
+
+	var exists bool
+	err := a.db.QueryRowContext(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM board_columns WHERE id = $1 AND board_id = $2)`,
+		columnID, boardID,
+	).Scan(&exists)
+	if err != nil {
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		log.Printf("requireColumnInBoard query: %v", err)
+		return ""
+	}
+	if !exists {
+		http.Error(w, "column not found", http.StatusNotFound)
+		return ""
+	}
+	return columnID
+}
+
+// @Summary     Replace column tickets
+// @Description Atomically sets the ordered list of tickets in a column.
+// @Description Tickets are placed at positions matching their array index.
+// @Description A ticket already in another column on this board is moved here.
+// @Description Tickets previously in this column but absent from the request are removed from the board.
+// @Accept      json
+// @Produce     json
+// @Param       boardID   path      string    true  "Board ID"
+// @Param       columnID  path      string    true  "Column ID"
+// @Param       body      body      []string  true  "Ordered ticket IDs"
+// @Success     200       {array}   string
+// @Failure     400       {string}  string  "Bad Request"
+// @Failure     401       {string}  string  "Unauthorized"
+// @Failure     404       {string}  string  "Not Found"
+// @Security    ApiKeyAuth
+// @Router      /kanbans/{boardID}/columns/{columnID}/tickets [put]
+func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
+	boardID := a.requireBoardInOrg(w, r)
+	if boardID == "" {
+		return
+	}
+	columnID := a.requireColumnInBoard(w, r, boardID)
+	if columnID == "" {
+		return
+	}
+
+	var ticketIDs []string
+	if err := json.NewDecoder(r.Body).Decode(&ticketIDs); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate all ticket IDs belong to this org before touching anything
+	o := orgFromContext(r.Context())
+	for _, tid := range ticketIDs {
+		var exists bool
+		err := a.db.QueryRowContext(r.Context(),
+			`SELECT EXISTS(SELECT 1 FROM tickets WHERE id = $1 AND org_id = $2)`,
+			tid, o.ID,
+		).Scan(&exists)
+		if err != nil {
+			http.Error(w, "query failed", http.StatusInternalServerError)
+			log.Printf("putColumnTickets validate ticket %s: %v", tid, err)
+			return
+		}
+		if !exists {
+			http.Error(w, "ticket not found: "+tid, http.StatusBadRequest)
+			return
+		}
+	}
+
+	tx, err := a.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		http.Error(w, "transaction failed", http.StatusInternalServerError)
+		log.Printf("putColumnTickets begin tx: %v", err)
+		return
+	}
+	defer tx.Rollback()
+
+	// Remove all tickets currently in this column. Tickets being moved here
+	// from another column are handled per-ticket below.
+	if _, err := tx.ExecContext(r.Context(),
+		`DELETE FROM kanban_board_tickets WHERE column_id = $1`, columnID,
+	); err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		log.Printf("putColumnTickets clear column: %v", err)
+		return
+	}
+
+	for i, tid := range ticketIDs {
+		// If this ticket is in another column on this board, remove it from there first
+		if _, err := tx.ExecContext(r.Context(),
+			`DELETE FROM kanban_board_tickets WHERE board_id = $1 AND ticket_id = $2`,
+			boardID, tid,
+		); err != nil {
+			http.Error(w, "delete failed", http.StatusInternalServerError)
+			log.Printf("putColumnTickets evict ticket %s: %v", tid, err)
+			return
+		}
+
+		if _, err := tx.ExecContext(r.Context(), `
+			INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+			VALUES ($1, $2, $3, $4)
+		`, boardID, columnID, tid, i); err != nil {
+			http.Error(w, "insert failed", http.StatusInternalServerError)
+			log.Printf("putColumnTickets insert ticket %s: %v", tid, err)
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "commit failed", http.StatusInternalServerError)
+		log.Printf("putColumnTickets commit: %v", err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ticketIDs)
+}

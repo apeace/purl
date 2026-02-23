@@ -42,6 +42,7 @@ func (a *App) Handler() http.Handler {
 		r.Get("/kanbans", a.listKanbans)
 		r.Post("/kanbans", a.createKanban)
 		r.Put("/kanbans/{boardID}/columns", a.putKanbanColumns)
+		r.Put("/kanbans/{boardID}/columns/{columnID}/tickets", a.putColumnTickets)
 		r.Get("/org", a.getOrg)
 		r.Get("/tickets", a.listTickets)
 	})
