@@ -316,6 +316,11 @@
           <span class="action-label">Apply Credit</span>
           <span class="action-desc">Issue account credit</span>
         </button>
+        <button class="action-card" @click="emit('addToBoard', ticketId)">
+          <Columns3 :size="20" class="action-icon action-icon--indigo" />
+          <span class="action-label">Add to Board</span>
+          <span class="action-desc">Place on a custom board</span>
+        </button>
       </div>
     </div>
 
@@ -609,7 +614,7 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useTickets } from "../composables/useTickets"
 import type { Message } from "../composables/useTickets"
@@ -620,6 +625,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   resolve: []
+  addToBoard: [ticketId: string]
 }>()
 
 const {
@@ -1228,6 +1234,7 @@ onBeforeUnmount(() => {
 .action-icon--orange { color: #fb923c; }
 .action-icon--green { color: #34d399; }
 .action-icon--purple { color: #c084fc; }
+.action-icon--indigo { color: #818cf8; }
 
 .action-label {
   font-size: 14px;

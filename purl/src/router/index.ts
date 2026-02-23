@@ -14,6 +14,7 @@ const routes: RouteRecordRaw[] = [
   { path: "/dashboard", component: DashboardPage },
   { path: "/login", component: LoginPage, meta: { public: true } },
   { path: "/kanban", component: KanbanPage },
+  { path: "/kanban/:boardId", component: KanbanPage },
   { path: "/inbox", component: InboxPage },
   { path: "/reporting", component: ReportingPage },
   { path: "/settings", component: SettingsPage },
