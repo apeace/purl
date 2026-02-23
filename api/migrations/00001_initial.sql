@@ -5,6 +5,7 @@ CREATE TYPE ticket_priority AS ENUM ('low', 'medium', 'high', 'urgent');
 CREATE TYPE comment_role    AS ENUM ('customer', 'agent');
 
 -- Shared trigger function: keeps updated_at current on every row update
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -12,6 +13,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TABLE organizations (
     id                 UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -25,6 +27,7 @@ CREATE TABLE organizations (
 );
 
 -- Auto-generate slug from name on insert when not explicitly provided
+-- +goose StatementBegin
 CREATE OR REPLACE FUNCTION organizations_set_slug()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -34,6 +37,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+-- +goose StatementEnd
 
 CREATE TRIGGER organizations_before_insert_set_slug
 BEFORE INSERT ON organizations
