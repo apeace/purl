@@ -39,6 +39,7 @@ func (a *App) Handler() http.Handler {
 
 	r.Group(func(r chi.Router) {
 		r.Use(a.requireAPIKey)
+		r.Get("/kanbans", a.listKanbans)
 		r.Get("/org", a.getOrg)
 		r.Get("/tickets", a.listTickets)
 	})
