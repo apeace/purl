@@ -10,29 +10,34 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type ZendeskTicket struct {
-	ID          int64   `json:"id"`
-	Subject     string  `json:"subject"`
-	Description string  `json:"description"`
-	Status      string  `json:"status"`
-	Priority    *string `json:"priority"`
-	RequesterID int64   `json:"requester_id"`
-	AssigneeID  *int64  `json:"assignee_id"`
+	ID          int64     `json:"id"`
+	Subject     string    `json:"subject"`
+	Description string    `json:"description"`
+	Status      string    `json:"status"`
+	Priority    *string   `json:"priority"`
+	RequesterID int64     `json:"requester_id"`
+	AssigneeID  *int64    `json:"assignee_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 type ZendeskTicketsResponse struct {
-	Tickets []ZendeskTicket `json:"tickets"`
+	Tickets  []ZendeskTicket `json:"tickets"`
+	NextPage *string         `json:"next_page"`
 }
 
 type ZendeskComment struct {
-	ID       int64  `json:"id"`
-	Body     string `json:"body"`
-	AuthorID int64  `json:"author_id"`
-	Public   bool   `json:"public"`
+	ID        int64     `json:"id"`
+	Body      string    `json:"body"`
+	AuthorID  int64     `json:"author_id"`
+	Public    bool      `json:"public"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type ZendeskCommentsResponse struct {
@@ -47,7 +52,8 @@ type ZendeskUser struct {
 }
 
 type ZendeskUsersResponse struct {
-	Users []ZendeskUser `json:"users"`
+	Users    []ZendeskUser `json:"users"`
+	NextPage *string       `json:"next_page"`
 }
 
 func zendeskGet(subdomain, creds, path string) ([]byte, error) {
@@ -114,7 +120,42 @@ func main() {
 
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
 
-	// Step 1: Fetch tickets
+	// Step 0: Wipe existing tickets and customers for this org.
+	// Tickets must be deleted before customers because tickets reference customers via reporter_id.
+	// Deleting tickets cascades to comments. Deleting customers cascades to customer_emails.
+	log.Println("wiping existing tickets and customers for org...")
+	if _, err := db.Exec(`DELETE FROM tickets WHERE org_id = $1`, orgID); err != nil {
+		log.Fatalf("wipe tickets: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM customers WHERE org_id = $1`, orgID); err != nil {
+		log.Fatalf("wipe customers: %v", err)
+	}
+
+	// Step 1: Fetch all agents and admins from Zendesk and upsert into DB.
+	log.Println("fetching all agents...")
+	allAgents, err := fetchAllAgents(subdomain, creds)
+	if err != nil {
+		log.Fatalf("fetch agents: %v", err)
+	}
+	log.Printf("fetched %d agents", len(allAgents))
+
+	agentsByZendeskID := make(map[int64]string) // zendeskUserID -> purl agent UUID
+	for _, u := range allAgents {
+		var agentID string
+		err := db.QueryRow(
+			`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3)
+			 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+			 RETURNING id`,
+			u.Email, u.Name, orgID,
+		).Scan(&agentID)
+		if err != nil {
+			log.Fatalf("insert agent %s: %v", u.Email, err)
+		}
+		agentsByZendeskID[u.ID] = agentID
+	}
+	log.Printf("upserted %d agents", len(agentsByZendeskID))
+
+	// Step 2: Fetch tickets
 	log.Println("fetching tickets...")
 	ticketsBody, err := zendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
 	if err != nil {
@@ -126,9 +167,9 @@ func main() {
 	}
 	log.Printf("fetched %d tickets", len(ticketsResp.Tickets))
 
-	// Step 2: Fetch comments per ticket and collect user IDs
+	// Step 3: Fetch comments per ticket and collect end-user IDs
 	allComments := make(map[int64][]ZendeskComment) // zendeskTicketID -> comments
-	userIDSet := make(map[int64]bool)
+	endUserIDSet := make(map[int64]bool)
 
 	for i, ticket := range ticketsResp.Tickets {
 		log.Printf("fetching comments for ticket %d/%d (Zendesk ID %d)...", i+1, len(ticketsResp.Tickets), ticket.ID)
@@ -142,40 +183,39 @@ func main() {
 		}
 		allComments[ticket.ID] = commentsResp.Comments
 
-		userIDSet[ticket.RequesterID] = true
-		if ticket.AssigneeID != nil {
-			userIDSet[*ticket.AssigneeID] = true
-		}
+		endUserIDSet[ticket.RequesterID] = true
 		for _, c := range commentsResp.Comments {
-			userIDSet[c.AuthorID] = true
+			// Only collect IDs of end-users; agents are already fetched above
+			if _, isAgent := agentsByZendeskID[c.AuthorID]; !isAgent {
+				endUserIDSet[c.AuthorID] = true
+			}
 		}
 	}
 
-	// Step 3: Batch-fetch users
-	userIDs := make([]string, 0, len(userIDSet))
-	for id := range userIDSet {
-		userIDs = append(userIDs, fmt.Sprintf("%d", id))
+	// Step 4: Batch-fetch end-users
+	endUserIDs := make([]string, 0, len(endUserIDSet))
+	for id := range endUserIDSet {
+		endUserIDs = append(endUserIDs, fmt.Sprintf("%d", id))
 	}
-	log.Printf("batch-fetching %d unique users...", len(userIDs))
-	usersBody, err := zendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(userIDs, ","))
-	if err != nil {
-		log.Fatalf("fetch users: %v", err)
-	}
-	var usersResp ZendeskUsersResponse
-	if err := json.Unmarshal(usersBody, &usersResp); err != nil {
-		log.Fatalf("parse users: %v", err)
-	}
+	log.Printf("batch-fetching %d unique end-users...", len(endUserIDs))
 
-	// Step 4: Insert users into DB
 	customersByZendeskID := make(map[int64]string) // zendeskUserID -> purl customer UUID
-	agentsByZendeskID := make(map[int64]string)    // zendeskUserID -> purl agent UUID
 
-	customersInserted := 0
-	agentsInserted := 0
+	if len(endUserIDs) > 0 {
+		usersBody, err := zendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
+		if err != nil {
+			log.Fatalf("fetch users: %v", err)
+		}
+		var usersResp ZendeskUsersResponse
+		if err := json.Unmarshal(usersBody, &usersResp); err != nil {
+			log.Fatalf("parse users: %v", err)
+		}
 
-	for _, u := range usersResp.Users {
-		switch u.Role {
-		case "end-user":
+		// Step 5: Insert customers
+		for _, u := range usersResp.Users {
+			if u.Role != "end-user" {
+				continue
+			}
 			var customerID string
 			err := db.QueryRow(
 				`INSERT INTO customers (name, org_id) VALUES ($1, $2) RETURNING id`,
@@ -192,26 +232,11 @@ func main() {
 				log.Fatalf("insert customer email %s: %v", u.Email, err)
 			}
 			customersByZendeskID[u.ID] = customerID
-			customersInserted++
-
-		case "agent", "admin":
-			var agentID string
-			err := db.QueryRow(
-				`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3)
-				 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
-				 RETURNING id`,
-				u.Email, u.Name, orgID,
-			).Scan(&agentID)
-			if err != nil {
-				log.Fatalf("insert agent %s: %v", u.Email, err)
-			}
-			agentsByZendeskID[u.ID] = agentID
-			agentsInserted++
 		}
 	}
-	log.Printf("inserted %d customers, %d agents", customersInserted, agentsInserted)
+	log.Printf("inserted %d customers", len(customersByZendeskID))
 
-	// Step 5: Insert tickets
+	// Step 6: Insert tickets with correct timestamps
 	ticketsByZendeskID := make(map[int64]string) // zendeskTicketID -> purl ticket UUID
 
 	for _, ticket := range ticketsResp.Tickets {
@@ -233,8 +258,8 @@ func main() {
 
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7)
+			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, created_at, updated_at)
+			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8, $9)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
@@ -243,6 +268,8 @@ func main() {
 			reporterID,
 			assigneeID,
 			orgID,
+			ticket.CreatedAt,
+			ticket.UpdatedAt,
 		).Scan(&ticketID)
 		if err != nil {
 			log.Fatalf("insert ticket %d: %v", ticket.ID, err)
@@ -251,7 +278,7 @@ func main() {
 	}
 	log.Printf("inserted %d tickets", len(ticketsByZendeskID))
 
-	// Step 6: Insert comments
+	// Step 7: Insert comments with correct timestamps
 	commentsInserted := 0
 	for zendeskTicketID, comments := range allComments {
 		ticketID, ok := ticketsByZendeskID[zendeskTicketID]
@@ -276,9 +303,9 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body)
-				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body,
+				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $6)`,
+				ticketID, customerAuthorID, agentAuthorID, role, c.Body, c.CreatedAt,
 			)
 			if err != nil {
 				log.Fatalf("insert comment %d: %v", c.ID, err)
@@ -288,6 +315,37 @@ func main() {
 	}
 	log.Printf("inserted %d comments", commentsInserted)
 	log.Println("done")
+}
+
+// fetchAllAgents retrieves all agents and admins from Zendesk, handling pagination.
+func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
+	var all []ZendeskUser
+	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
+
+	for path != "" {
+		body, err := zendeskGet(subdomain, creds, path)
+		if err != nil {
+			return nil, err
+		}
+		var resp ZendeskUsersResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("parse users: %w", err)
+		}
+		all = append(all, resp.Users...)
+
+		if resp.NextPage == nil {
+			break
+		}
+		// NextPage is a full URL; extract the path+query portion
+		next := *resp.NextPage
+		idx := strings.Index(next, "/api/v2/")
+		if idx == -1 {
+			break
+		}
+		path = next[idx:]
+	}
+
+	return all, nil
 }
 
 func mapStatus(s string) string {
