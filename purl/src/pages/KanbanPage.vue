@@ -15,7 +15,7 @@
             <X :size="12" />
           </button>
         </div>
-        <FilterPanel />
+        <FilterPanel :custom-stages="isCustomBoard && currentBoard ? currentBoard.stages : undefined" />
       </div>
     </div>
     <div class="stages-scroll">
@@ -140,7 +140,7 @@ import { STATUS_COLORS } from "../utils/colors"
 
 const route = useRoute()
 const { addCardToBoard, boards, getBoardById, moveCard } = useKanbanBoards()
-const { filteredTickets, resolveTicket, setStatus, tickets } = useTickets()
+const { filterAssignees, filterKeyword, filterPriorities, filterStatuses, filteredTickets, resolveTicket, setStatus, tickets } = useTickets()
 
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)
@@ -161,6 +161,7 @@ const pageTitle = computed(() => {
 watch(boardId, () => {
   selectedTicketId.value = null
   searchQuery.value = ""
+  filterStatuses.clear()
 })
 
 // ── Service Flow stage definitions ───────────────────────
@@ -205,12 +206,20 @@ const stages = computed(() => {
 
   if (isCustomBoard.value && currentBoard.value) {
     const board = currentBoard.value
-    return stageDefs.value.map((def) => {
-      // Get tickets assigned to this stage
+    // When stage filters are active, only show matching stages
+    const stageFilter = filterStatuses.size > 0
+    return stageDefs.value
+      .filter((def) => !stageFilter || filterStatuses.has(def.status))
+      .map((def) => {
       const assignedIds = Object.entries(board.cardAssignments)
         .filter(([, stageId]) => stageId === def.status)
         .map(([ticketId]) => ticketId)
       let items = tickets.value.filter((t) => assignedIds.includes(t.id))
+      // Apply shared filters (keyword, priority, assignee)
+      const kw = filterKeyword.value.trim().toLowerCase()
+      if (kw) items = items.filter((t) => t.subject.toLowerCase().includes(kw) || (t.messages[0]?.text ?? "").toLowerCase().includes(kw))
+      if (filterPriorities.size) items = items.filter((t) => filterPriorities.has(t.priority))
+      if (filterAssignees.size) items = items.filter((t) => filterAssignees.has(t.assignee))
       if (q) items = items.filter((t) => matchesSearch(t, q))
       return {
         title: def.title,
