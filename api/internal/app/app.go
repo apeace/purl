@@ -40,6 +40,8 @@ func (a *App) Handler() http.Handler {
 	r.Group(func(r chi.Router) {
 		r.Use(a.requireAPIKey)
 		r.Get("/kanbans", a.listKanbans)
+		r.Post("/kanbans", a.createKanban)
+		r.Put("/kanbans/{boardID}/columns", a.putKanbanColumns)
 		r.Get("/org", a.getOrg)
 		r.Get("/tickets", a.listTickets)
 	})
