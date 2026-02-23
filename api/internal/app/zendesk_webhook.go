@@ -64,6 +64,16 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, err = a.db.ExecContext(r.Context(), `
+		INSERT INTO zendesk_webhook_events (org_id, event_id, event_type, payload)
+		VALUES ($1, $2, $3, $4)
+	`, orgID, payload.ID, payload.Type, body)
+	if err != nil {
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		log.Printf("handleZendeskWebhook: insert event: %v", err)
+		return
+	}
+
 	a.dispatchZendeskEvent(r, orgID, &payload)
 
 	w.WriteHeader(http.StatusOK)
