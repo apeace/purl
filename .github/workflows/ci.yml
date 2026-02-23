@@ -58,3 +58,15 @@ jobs:
         run: npm run generate -w @purl/lib
 
       - run: npm run build -w @purl/purl
+
+  docker:
+    name: Build Docker images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image
+        run: docker build -f api/Dockerfile api/
+
+      - name: Build nginx image
+        run: docker build -f deploy/nginx/Dockerfile .
