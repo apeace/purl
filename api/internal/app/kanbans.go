@@ -33,6 +33,56 @@ type createKanbanRequest struct {
 	Name string `json:"name"`
 }
 
+type updateKanbanRequest struct {
+	Name string `json:"name"`
+}
+
+// @Summary     Update a Kanban board
+// @Description Updates the name of a Kanban board
+// @Accept      json
+// @Produce     json
+// @Param       boardID  path      string               true  "Board ID"
+// @Param       body     body      updateKanbanRequest  true  "Fields to update"
+// @Success     200      {object}  kanbanBoard
+// @Failure     400      {string}  string  "Bad Request"
+// @Failure     401      {string}  string  "Unauthorized"
+// @Failure     403      {string}  string  "Forbidden"
+// @Failure     404      {string}  string  "Not Found"
+// @Security    ApiKeyAuth
+// @Router      /kanbans/{boardID} [patch]
+func (a *App) updateKanban(w http.ResponseWriter, r *http.Request) {
+	boardID := a.requireBoardInOrg(w, r)
+	if boardID == "" {
+		return
+	}
+
+	var req updateKanbanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	var b kanbanBoard
+	err := a.db.QueryRowContext(r.Context(), `
+		UPDATE boards SET name = $2
+		WHERE id = $1
+		RETURNING id, created_at, updated_at, name, is_default
+	`, boardID, req.Name).Scan(&b.ID, &b.CreatedAt, &b.UpdatedAt, &b.Name, &b.IsDefault)
+	if err != nil {
+		http.Error(w, "update failed", http.StatusInternalServerError)
+		log.Printf("updateKanban update: %v", err)
+		return
+	}
+	b.Columns = []kanbanColumn{}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(b)
+}
+
 // @Summary     Create a Kanban board
 // @Description Creates a new Kanban board for the org
 // @Accept      json
