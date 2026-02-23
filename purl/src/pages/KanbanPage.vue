@@ -533,6 +533,26 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   color: #6ee7b7;
 }
 
+/* ── Intermediate screens ────────────────────────────────── */
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .workspace {
+    flex: 6;
+  }
+
+  .queue-panel {
+    flex: 4;
+  }
+
+  .kanban-search-input {
+    width: 120px;
+  }
+
+  .strategy-header-label {
+    font-size: 15px;
+  }
+}
+
 /* ── Mobile ──────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
@@ -549,6 +569,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   }
 
   .queue-panel {
+    min-width: 0;
     max-height: 60dvh;
   }
 }

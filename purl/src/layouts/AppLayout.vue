@@ -822,4 +822,24 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
     padding: 28px;
   }
 }
+
+/* ---- Intermediate: narrower sidebar ---- */
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .sidebar:not(.sidebar--collapsed) {
+    width: 200px;
+  }
+
+  .sidebar:not(.sidebar--collapsed) .sidebar-search-btn kbd {
+    display: none;
+  }
+
+  .main-content:not(.main-content--collapsed) {
+    margin-left: 200px;
+  }
+
+  .page-wrap {
+    padding: 20px;
+  }
+}
 </style>

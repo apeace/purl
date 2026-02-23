@@ -442,7 +442,21 @@ const sections = [
   margin-bottom: 20px;
 }
 
-@media (min-width: 768px) {
+@media (min-width: 768px) and (max-width: 1099px) {
+  .charts-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .metric-value {
+    font-size: 19px;
+  }
+
+  .mini-chart-value {
+    font-size: 20px;
+  }
+}
+
+@media (min-width: 1100px) {
   .charts-row {
     grid-template-columns: 1.4fr 1fr 1fr;
   }
