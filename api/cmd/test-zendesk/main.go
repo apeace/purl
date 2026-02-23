@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,18 +33,18 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	var subdomain, apiKey string
+	var subdomain, email, apiKey string
 	err = db.QueryRow(
-		`SELECT zendesk_subdomain, zendesk_api_key FROM organizations WHERE slug = $1`,
+		`SELECT zendesk_subdomain, COALESCE(zendesk_email, ''), COALESCE(zendesk_api_key, '') FROM organizations WHERE slug = $1`,
 		slug,
-	).Scan(&subdomain, &apiKey)
+	).Scan(&subdomain, &email, &apiKey)
 	if err == sql.ErrNoRows {
 		log.Fatalf("no organization found with slug %q", slug)
 	}
 	if err != nil {
 		log.Fatalf("query org: %v", err)
 	}
-	if subdomain == "" || apiKey == "" {
+	if subdomain == "" || email == "" || apiKey == "" {
 		log.Fatalf("org %q has no Zendesk credentials configured", slug)
 	}
 
@@ -54,7 +55,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("create request: %v", err)
 	}
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	// Zendesk API token auth requires Basic auth with "{email}/token:{api_token}" encoded in base64
+	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	req.Header.Set("Authorization", "Basic "+creds)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
