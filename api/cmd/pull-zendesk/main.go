@@ -258,8 +258,8 @@ func main() {
 
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, created_at, updated_at)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8, $9)
+			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status)
+			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8, $9, $10::zendesk_status_category)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
@@ -270,6 +270,7 @@ func main() {
 			orgID,
 			ticket.CreatedAt,
 			ticket.UpdatedAt,
+			mapZendeskStatusCategory(ticket.Status),
 		).Scan(&ticketID)
 		if err != nil {
 			log.Fatalf("insert ticket %d: %v", ticket.ID, err)
@@ -314,6 +315,67 @@ func main() {
 		}
 	}
 	log.Printf("inserted %d comments", commentsInserted)
+
+	// Step 8: Place tickets into the default Kanban board columns by zendesk_status.
+	// Deleting tickets in Step 0 cascades to kanban_board_tickets, so we start fresh.
+	log.Println("placing tickets into default Kanban board...")
+
+	var defaultBoardID string
+	err = db.QueryRow(
+		`SELECT id FROM boards WHERE org_id = $1 AND is_default = true`,
+		orgID,
+	).Scan(&defaultBoardID)
+	if err == sql.ErrNoRows {
+		log.Println("warn: no default Kanban board found — skipping ticket placement")
+		log.Println("done")
+		return
+	}
+	if err != nil {
+		log.Fatalf("query default board: %v", err)
+	}
+
+	// Check which zendesk_status values have a matching column and warn about gaps
+	colRows, err := db.Query(
+		`SELECT zendesk_status::text FROM board_columns WHERE board_id = $1`,
+		defaultBoardID,
+	)
+	if err != nil {
+		log.Fatalf("query board columns: %v", err)
+	}
+	coveredStatuses := map[string]bool{}
+	for colRows.Next() {
+		var s string
+		if err := colRows.Scan(&s); err != nil {
+			log.Fatalf("scan board column: %v", err)
+		}
+		coveredStatuses[s] = true
+	}
+	colRows.Close()
+
+	for _, s := range []string{"new", "open", "pending", "solved", "closed"} {
+		if !coveredStatuses[s] {
+			log.Printf("warn: default Kanban board has no column for zendesk_status %q — those tickets will not be placed", s)
+		}
+	}
+
+	// Insert all tickets into their matching column in one query.
+	// Position within each column is assigned by created_at ASC (oldest = top of queue).
+	result, err := db.Exec(`
+		INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+		SELECT
+			$1,
+			bc.id,
+			t.id,
+			(ROW_NUMBER() OVER (PARTITION BY bc.id ORDER BY t.created_at ASC) - 1)::integer
+		FROM tickets t
+		JOIN board_columns bc ON bc.board_id = $1 AND bc.zendesk_status = t.zendesk_status
+		WHERE t.org_id = $2
+	`, defaultBoardID, orgID)
+	if err != nil {
+		log.Fatalf("place tickets in kanban: %v", err)
+	}
+	placed, _ := result.RowsAffected()
+	log.Printf("placed %d tickets into default Kanban board", placed)
 	log.Println("done")
 }
 
@@ -346,6 +408,20 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 	}
 
 	return all, nil
+}
+
+// mapZendeskStatusCategory maps a Zendesk ticket status to the zendesk_status_category
+// enum, which mirrors Zendesk's status categories. "hold" is not a category of its own;
+// Zendesk places it under "pending".
+func mapZendeskStatusCategory(s string) string {
+	switch s {
+	case "new", "open", "pending", "solved", "closed":
+		return s
+	case "hold":
+		return "pending"
+	default:
+		return "open"
+	}
 }
 
 func mapStatus(s string) string {
