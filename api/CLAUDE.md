@@ -9,3 +9,7 @@ The `api/docs/` directory is gitignored — docs are generated automatically at 
 Use `docker compose up -d` for local development. Air watches for changes and automatically reruns `swag init` and rebuilds the server.
 
 When API annotations change, the frontend container's Vite plugin regenerates the TypeScript client automatically when the spec file changes. If the frontend is not running, restart it to pick up the new spec.
+
+## Verifying Compilation
+
+Use `go build ./path/to/package/...` to verify code compiles. This produces binary artifacts — always delete them when done (e.g. `rm api/cmd/pull-zendesk/pull-zendesk`).
