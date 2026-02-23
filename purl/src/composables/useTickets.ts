@@ -269,11 +269,10 @@ function parseWait(str: string): number {
 
 function resolveTicket(id: string) {
   const ticket = tickets.value.find((t) => t.id === id)
-  if (ticket) {
-    ticket.status = "solved"
-    ticket.read = true
-    resolvedToday.value++
-  }
+  if (!ticket || ticket.status === "solved" || ticket.status === "closed") return
+  ticket.status = "solved"
+  ticket.read = true
+  resolvedToday.value++
 }
 
 function archiveTicket(id: string) {
@@ -349,7 +348,7 @@ function updateNotes(id: string, text: string) {
 
 async function loadTickets() {
   const { data } = await getTickets()
-  tickets.value = data!.map(toTicket)
+  if (data) tickets.value = data.map(toTicket)
 }
 
 // ── Public composable ───────────────────────────────────

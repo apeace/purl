@@ -38,7 +38,7 @@
                       <span class="preview-badge" :class="`preview-badge--${cardPreviews[opt.id]!.priority}`">{{ cardPreviews[opt.id]!.priority }}</span>
                     </div>
                     <div class="preview-subject">{{ cardPreviews[opt.id]!.subject }}</div>
-                    <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0].text }}</div>
+                    <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0]?.text }}</div>
                   </div>
                 </div>
               </button>
