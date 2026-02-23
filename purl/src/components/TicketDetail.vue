@@ -44,16 +44,21 @@
             v-for="msg in ticket.messages"
             :key="msg.id"
             class="message"
-            :class="msg.from === 'agent' ? 'message--agent' : 'message--customer'"
+            :class="{
+              'message--agent': msg.from === 'agent',
+              'message--customer': msg.from === 'customer',
+              'message--system': msg.from === 'system'
+            }"
           >
             <div v-if="msg.from === 'customer'" class="msg-avatar" :style="{ background: ticket.avatarColor }">
               {{ ticket.name[0] }}
             </div>
-            <div class="msg-bubble">
+            <div v-if="msg.type !== 'recording'" class="msg-bubble">
               <div class="msg-header">
                 <span class="msg-sender">{{ msg.from === 'agent' ? 'You' : ticket.name }}</span>
                 <span class="msg-channel" :class="`msg-channel--${msg.channel}`">
-                  <Mail v-if="msg.channel === 'email'" :size="10" />
+                  <MessageCircle v-if="msg.channel === 'chat'" :size="10" />
+                  <Mail v-else-if="msg.channel === 'email'" :size="10" />
                   <MessageSquare v-else-if="msg.channel === 'sms'" :size="10" />
                   <Phone v-else-if="msg.channel === 'phone'" :size="10" />
                   {{ msg.channel }}
@@ -61,6 +66,55 @@
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
               <div class="msg-body">{{ msg.text }}</div>
+            </div>
+            <div v-else class="recording-card">
+              <div class="recording-header">
+                <div class="recording-icon">
+                  <Phone :size="16" />
+                </div>
+                <div class="recording-title">Call Recording</div>
+                <span class="recording-duration">{{ formatDuration(msg.recording.duration) }}</span>
+                <span class="msg-channel msg-channel--phone">
+                  <Phone :size="10" />
+                  phone
+                </span>
+                <span class="msg-time">{{ msg.time }}</span>
+              </div>
+              <div class="waveform-player">
+                <button class="waveform-play-btn" @click="togglePlayback(msg)">
+                  <Pause v-if="playingRecordingId === msg.id" :size="16" />
+                  <Play v-else :size="16" />
+                </button>
+                <div class="waveform-bars">
+                  <div
+                    v-for="(bar, i) in msg.recording.waveform"
+                    :key="i"
+                    class="waveform-bar"
+                    :class="{ 'waveform-bar--played': playingRecordingId === msg.id && i / msg.recording.waveform.length <= playbackProgress }"
+                    :style="{ height: `${bar * 100}%` }"
+                  />
+                </div>
+                <div class="waveform-time">
+                  <span>{{ playbackElapsedFor(msg) }}</span>
+                  <span>{{ formatDuration(msg.recording.duration) }}</span>
+                </div>
+              </div>
+              <button class="transcript-toggle" @click="toggleTranscript(msg.id)">
+                <Sparkles :size="13" />
+                <span>AI Transcript</span>
+                <ChevronDown :size="14" :class="{ 'chevron-flipped': expandedTranscriptId === msg.id }" />
+              </button>
+              <div v-if="expandedTranscriptId === msg.id" class="transcript-body">
+                <div
+                  v-for="(line, i) in msg.recording.transcript"
+                  :key="i"
+                  class="transcript-line"
+                >
+                  <span class="transcript-time">{{ line.time }}</span>
+                  <span class="transcript-speaker">{{ line.speaker }}</span>
+                  <span class="transcript-text">{{ line.text }}</span>
+                </div>
+              </div>
             </div>
             <div v-if="msg.from === 'agent'" class="msg-avatar msg-avatar--agent">Y</div>
           </div>
@@ -273,18 +327,267 @@
           <span>Reply</span>
         </button>
         <div v-show="!composeCollapsed" class="thread-compose">
-          <textarea
-            v-model="replyText"
-            class="compose-input"
-            placeholder="Write a reply…"
-            rows="3"
-            @keydown.meta.enter="sendReply"
-          />
-          <div class="compose-actions">
-            <button class="btn btn--ghost" @click="handleResolve">Resolve</button>
-            <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
-              <Send :size="14" /> Send Reply
+          <div class="channel-bar">
+            <button
+              v-for="ch in channelOptions"
+              :key="ch.id"
+              class="channel-btn"
+              :class="{ 'channel-btn--active': activeChannel === ch.id, [`channel-btn--${ch.id}`]: true }"
+              @click="replyChannel = ch.id"
+            >
+              <component :is="ch.icon" :size="13" />
+              <span class="channel-label">{{ ch.label }}</span>
             </button>
+          </div>
+          <!-- Standard compose (non-phone channels) -->
+          <template v-if="!isPhoneChannel">
+            <textarea
+              v-model="replyText"
+              class="compose-input"
+              placeholder="Write a reply…"
+              rows="3"
+              @keydown.meta.enter="sendReply"
+            />
+            <div class="compose-actions">
+              <button class="btn btn--ghost" @click="handleResolve">Resolve</button>
+              <button class="btn btn--primary" :disabled="!replyText.trim()" @click="sendReply">
+                <Send :size="14" /> Send Reply
+              </button>
+            </div>
+          </template>
+
+          <!-- Phone call UI -->
+          <div v-else class="phone-ui">
+            <!-- Status card (idle or non-merged calls) -->
+            <div
+              v-if="!isMerged"
+              class="phone-status-card"
+              :class="primaryCall ? `phone-status-card--${primaryCall.status}` : ''"
+            >
+              <div class="phone-status-icon" :class="{ 'phone-status-icon--ringing': primaryCall?.status === 'ringing' }">
+                <Pause v-if="primaryCall?.status === 'on-hold'" :size="20" />
+                <PhoneCall v-else :size="20" />
+              </div>
+              <div class="phone-status-info">
+                <div class="phone-status-label">
+                  {{ !primaryCall ? "Ready to call" : primaryCall.status === "ringing" ? "Ringing…" : primaryCall.status === "connected" ? "Connected" : "On Hold" }}
+                </div>
+                <div class="phone-status-number">
+                  {{ !primaryCall ? customerPhoneDisplay : primaryCall.number }}
+                </div>
+              </div>
+              <div v-if="primaryCall && (primaryCall.status === 'connected' || primaryCall.status === 'on-hold')" class="phone-timer">
+                <Clock :size="12" />
+                {{ formattedTime(primaryCall) }}
+              </div>
+            </div>
+
+            <!-- Merged conference card -->
+            <div
+              v-if="isMerged"
+              class="phone-status-card"
+              :class="calls.every(c => c.status === 'on-hold') ? 'phone-status-card--on-hold' : 'phone-status-card--connected'"
+            >
+              <div class="phone-status-icon">
+                <Users :size="20" />
+              </div>
+              <div class="phone-status-info">
+                <div class="phone-status-label">
+                  {{ calls.every(c => c.status === "on-hold") ? "Conference — On Hold" : "Conference" }}
+                </div>
+                <div class="phone-status-number">{{ calls.length }} participants</div>
+              </div>
+            </div>
+
+            <!-- Held call card (two calls, not merged) -->
+            <div
+              v-if="heldCall && !isMerged && hasTwoCalls"
+              class="phone-status-card phone-status-card--on-hold phone-status-card--held"
+            >
+              <div class="phone-status-icon">
+                <Pause :size="16" />
+              </div>
+              <div class="phone-status-info">
+                <div class="phone-status-label">On Hold</div>
+                <div class="phone-status-number">{{ heldCall.name }} · {{ heldCall.number }}</div>
+              </div>
+              <div class="phone-timer">
+                <Clock :size="12" />
+                {{ formattedTime(heldCall) }}
+              </div>
+            </div>
+
+            <!-- Merged participants list -->
+            <div v-if="isMerged" class="phone-participants">
+              <div v-for="call in calls" :key="call.id" class="phone-participant">
+                <span class="phone-participant-dot" :class="call.status === 'connected' ? 'phone-participant-dot--connected' : 'phone-participant-dot--on-hold'" />
+                <span class="phone-participant-name">{{ call.name }}</span>
+                <span class="phone-participant-status">{{ formattedTime(call) }}</span>
+                <button class="phone-participant-remove" @click="requestDrop(call)">
+                  <X :size="12" />
+                </button>
+              </div>
+            </div>
+
+            <!-- New call picker (inline, when single call on hold) -->
+            <div v-if="showNewCall" class="call-menu call-menu--inline">
+              <button class="call-menu-item" @click="startCall">
+                <Phone :size="14" />
+                <span class="call-menu-text">
+                  <span class="call-menu-label">Subscriber number</span>
+                  <span class="call-menu-number">{{ customerPhoneDisplay }}</span>
+                </span>
+              </button>
+              <div class="call-menu-divider" />
+              <button v-if="!showCustomNumber" class="call-menu-item call-menu-item--other" @click="showCustomNumber = true">
+                <PhoneCall :size="14" />
+                <span class="call-menu-label">Other number…</span>
+              </button>
+              <div v-else class="call-menu-custom">
+                <input
+                  ref="customNumberInput"
+                  v-model="callNumber"
+                  class="call-menu-input"
+                  placeholder="Enter number…"
+                  @keydown.enter="callNumber.trim() && startCall()"
+                />
+                <button
+                  class="call-menu-dial"
+                  :disabled="!callNumber.trim()"
+                  @click="startCall"
+                >
+                  <PhoneCall :size="13" />
+                </button>
+              </div>
+            </div>
+
+            <!-- Confirmation dialog -->
+            <div v-if="confirmAction" class="phone-confirm">
+              <div class="phone-confirm-message">{{ confirmAction.message }}</div>
+              <div class="phone-confirm-actions">
+                <button class="phone-btn" @click="cancelConfirm">Cancel</button>
+                <button class="phone-btn phone-btn--end" @click="executeConfirm">
+                  {{ confirmAction.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Controls -->
+            <div class="phone-controls">
+              <!-- Idle -->
+              <template v-if="isIdle">
+                <div class="call-menu-wrap">
+                  <button class="phone-btn phone-btn--call" @click="showCallMenu = !showCallMenu">
+                    <PhoneCall :size="15" /> Call {{ ticket.name.split(" ")[0] }}
+                    <ChevronDown :size="13" :class="{ 'chevron-flipped': showCallMenu }" />
+                  </button>
+                  <div v-if="showCallMenu" class="call-menu">
+                    <button class="call-menu-item" @click="startCall">
+                      <Phone :size="14" />
+                      <span class="call-menu-text">
+                        <span class="call-menu-label">Subscriber number</span>
+                        <span class="call-menu-number">{{ customerPhoneDisplay }}</span>
+                      </span>
+                    </button>
+                    <div class="call-menu-divider" />
+                    <button v-if="!showCustomNumber" class="call-menu-item call-menu-item--other" @click="showCustomNumber = true">
+                      <PhoneCall :size="14" />
+                      <span class="call-menu-label">Other number…</span>
+                    </button>
+                    <div v-else class="call-menu-custom">
+                      <input
+                        ref="customNumberInput"
+                        v-model="callNumber"
+                        class="call-menu-input"
+                        placeholder="Enter number…"
+                        @keydown.enter="callNumber.trim() && startCall()"
+                      />
+                      <button
+                        class="call-menu-dial"
+                        :disabled="!callNumber.trim()"
+                        @click="startCall"
+                      >
+                        <PhoneCall :size="13" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </template>
+              <!-- Two calls (one active, one held) -->
+              <template v-else-if="hasTwoCalls && !isMerged">
+                <button class="phone-btn phone-btn--mute" :class="{ 'phone-btn--active': isMuted }" @click="toggleMute">
+                  <MicOff v-if="isMuted" :size="15" />
+                  <Mic v-else :size="15" />
+                  {{ isMuted ? "Unmute" : "Mute" }}
+                </button>
+                <button class="phone-btn phone-btn--hold" @click="swapCalls">
+                  <Phone :size="15" />
+                  Swap
+                </button>
+                <button class="phone-btn phone-btn--call" @click="requestMerge">
+                  <Users :size="15" />
+                  Merge
+                </button>
+                <button class="phone-btn phone-btn--end" @click="requestHangUp">
+                  <PhoneOff :size="15" /> End
+                </button>
+              </template>
+              <!-- Merged conference -->
+              <template v-else-if="isMerged">
+                <button class="phone-btn phone-btn--mute" :class="{ 'phone-btn--active': isMuted }" @click="toggleMute">
+                  <MicOff v-if="isMuted" :size="15" />
+                  <Mic v-else :size="15" />
+                  {{ isMuted ? "Unmute" : "Mute" }}
+                </button>
+                <button
+                  class="phone-btn phone-btn--hold"
+                  :class="{ 'phone-btn--active': calls.every(c => c.status === 'on-hold') }"
+                  @click="toggleHoldMerged"
+                >
+                  <Play v-if="calls.every(c => c.status === 'on-hold')" :size="15" />
+                  <Pause v-else :size="15" />
+                  {{ calls.every(c => c.status === "on-hold") ? "Resume" : "Hold" }}
+                </button>
+                <button class="phone-btn phone-btn--end" @click="requestHangUp">
+                  <PhoneOff :size="15" /> End
+                </button>
+              </template>
+              <!-- Single call (ringing, connected, or on hold) -->
+              <template v-else>
+                <button
+                  class="phone-btn phone-btn--mute"
+                  :class="{ 'phone-btn--active': isMuted }"
+                  :disabled="primaryCall?.status === 'ringing'"
+                  @click="toggleMute"
+                >
+                  <MicOff v-if="isMuted" :size="15" />
+                  <Mic v-else :size="15" />
+                  {{ isMuted ? "Unmute" : "Mute" }}
+                </button>
+                <button
+                  class="phone-btn phone-btn--hold"
+                  :class="{ 'phone-btn--active': primaryCall?.status === 'on-hold' }"
+                  :disabled="primaryCall?.status === 'ringing'"
+                  @click="toggleHold"
+                >
+                  <Play v-if="primaryCall?.status === 'on-hold'" :size="15" />
+                  <Pause v-else :size="15" />
+                  {{ primaryCall?.status === "on-hold" ? "Resume" : "Hold" }}
+                </button>
+                <button
+                  v-if="canStartSecondCall"
+                  class="phone-btn phone-btn--call"
+                  :class="{ 'phone-btn--active': showNewCall }"
+                  @click="showNewCall = !showNewCall"
+                >
+                  <PhoneCall :size="15" />
+                  New Call
+                </button>
+                <button class="phone-btn phone-btn--end" @click="requestHangUp">
+                  <PhoneOff :size="15" /> End
+                </button>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -306,8 +609,8 @@
 </template>
 
 <script setup>
-import { AlertTriangle, ChevronDown, ChevronRight, Cog, DollarSign, History, Mail, MessageSquare, Phone, RotateCcw, Send, Sparkles, Truck, User, Users, Zap } from "lucide-vue-next"
-import { computed, nextTick, ref, watch } from "vue"
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useTickets } from "../composables/useTickets.js"
 
 const props = defineProps({
@@ -332,8 +635,35 @@ const {
 const activeTab = ref("comms")
 const composeCollapsed = ref(true)
 const replyText = ref("")
+const replyChannel = ref(null)
 const newTag = ref("")
 const messagesEl = ref(null)
+
+// Phone call state
+const calls = ref([])
+const isMerged = ref(false)
+const isMuted = ref(false)
+const showCallMenu = ref(false)
+const showCustomNumber = ref(false)
+const showNewCall = ref(false)
+const customNumberInput = ref(null)
+const callNumber = ref("")
+const confirmAction = ref(null)
+const sessionStartTime = ref(null)
+let callIdCounter = 0
+
+// Recording playback state
+const playingRecordingId = ref(null)
+const playbackProgress = ref(0)
+const playbackTimerHandle = ref(null)
+const expandedTranscriptId = ref(null)
+
+const channelOptions = [
+  { id: "chat", icon: MessageCircle, label: "Chat" },
+  { id: "sms", icon: MessageSquare, label: "SMS" },
+  { id: "email", icon: Mail, label: "Email" },
+  { id: "phone", icon: Phone, label: "Phone" },
+]
 
 const tabs = [
   { id: "comms", icon: MessageSquare, label: "Communications" },
@@ -351,6 +681,352 @@ const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
 
+const activeChannel = computed(() => {
+  if (replyChannel.value) return replyChannel.value
+  const firstCustomerMsg = ticket.value?.messages.find((m) => m.from === "customer")
+  return firstCustomerMsg?.channel ?? "chat"
+})
+
+const isPhoneChannel = computed(() => activeChannel.value === "phone")
+
+const customerPhoneDisplay = computed(() => ticket.value?.phone || "(555) 867-5309")
+const dialNumber = computed(() => callNumber.value.trim() || customerPhoneDisplay.value)
+
+const isIdle = computed(() => calls.value.length === 0)
+const activeCall = computed(() => calls.value.find((c) => c.status === "connected" || c.status === "ringing"))
+const heldCall = computed(() => calls.value.find((c) => c.status === "on-hold"))
+const hasTwoCalls = computed(() => calls.value.length === 2)
+const canStartSecondCall = computed(() => calls.value.length === 1 && calls.value[0].status === "on-hold" && !isMerged.value)
+const primaryCall = computed(() => activeCall.value || heldCall.value)
+
+function formattedTime(call) {
+  const mins = Math.floor(call.seconds / 60)
+  const secs = call.seconds % 60
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
+}
+
+// Phone call functions
+function startCallTimer(call) {
+  stopCallTimer(call)
+  call.timerHandle = setInterval(() => {
+    call.seconds++
+  }, 1000)
+}
+
+function stopCallTimer(call) {
+  if (call.timerHandle) {
+    clearInterval(call.timerHandle)
+    call.timerHandle = null
+  }
+}
+
+function clearRingTimer(call) {
+  if (call.ringHandle) {
+    clearTimeout(call.ringHandle)
+    call.ringHandle = null
+  }
+}
+
+function addRecording(duration) {
+  if (duration > 0 && ticket.value) {
+    ticket.value.messages.push({
+      id: ticket.value.messages.length + 1,
+      from: "system",
+      channel: "phone",
+      time: "just now",
+      text: "",
+      type: "recording",
+      recording: {
+        duration,
+        waveform: generateFakeWaveform(),
+        transcript: generateFakeTranscript(ticket.value.name, duration),
+      },
+    })
+    scrollToBottom()
+  }
+}
+
+function startCall() {
+  showCallMenu.value = false
+  showCustomNumber.value = false
+  showNewCall.value = false
+  const isSecond = calls.value.length === 1
+  const name = isSecond ? "Call 2" : (ticket.value?.name ?? "Customer")
+  const id = ++callIdCounter
+  calls.value.push({
+    id,
+    name,
+    number: dialNumber.value,
+    status: "ringing",
+    seconds: 0,
+    timerHandle: null,
+    ringHandle: null,
+  })
+  const call = calls.value[calls.value.length - 1]
+  call.ringHandle = setTimeout(() => {
+    call.status = "connected"
+    call.ringHandle = null
+    if (!sessionStartTime.value) sessionStartTime.value = Date.now()
+    startCallTimer(call)
+  }, 2000)
+  callNumber.value = ""
+}
+
+function endSession() {
+  if (sessionStartTime.value) {
+    const duration = Math.round((Date.now() - sessionStartTime.value) / 1000)
+    sessionStartTime.value = null
+    addRecording(duration)
+  }
+}
+
+function hangUp() {
+  if (isMerged.value) {
+    calls.value.forEach((c) => {
+      stopCallTimer(c)
+      clearRingTimer(c)
+    })
+    calls.value = []
+    isMerged.value = false
+    isMuted.value = false
+    endSession()
+    return
+  }
+
+  const active = activeCall.value
+  if (!active) return
+
+  stopCallTimer(active)
+  clearRingTimer(active)
+
+  const idx = calls.value.findIndex((c) => c.id === active.id)
+  if (idx !== -1) calls.value.splice(idx, 1)
+
+  // If a held call remains, resume it
+  const held = calls.value.find((c) => c.status === "on-hold")
+  if (held) {
+    held.status = "connected"
+    startCallTimer(held)
+  }
+
+  if (calls.value.length === 0) {
+    isMuted.value = false
+    endSession()
+  }
+}
+
+function toggleHold() {
+  if (calls.value.length !== 1) return
+  const call = calls.value[0]
+  if (call.status === "connected") {
+    call.status = "on-hold"
+    stopCallTimer(call)
+  } else if (call.status === "on-hold") {
+    call.status = "connected"
+    showNewCall.value = false
+    startCallTimer(call)
+  }
+}
+
+function toggleMute() {
+  isMuted.value = !isMuted.value
+}
+
+function swapCalls() {
+  if (calls.value.length !== 2) return
+  const active = activeCall.value
+  const held = heldCall.value
+  if (!active || !held) return
+  stopCallTimer(active)
+  active.status = "on-hold"
+  held.status = "connected"
+  startCallTimer(held)
+}
+
+function mergeCalls() {
+  if (calls.value.length !== 2) return
+  isMerged.value = true
+  calls.value.forEach((c) => {
+    if (c.status === "on-hold") {
+      c.status = "connected"
+      startCallTimer(c)
+    }
+  })
+}
+
+function toggleHoldMerged() {
+  const allHeld = calls.value.every((c) => c.status === "on-hold")
+  if (allHeld) {
+    calls.value.forEach((c) => {
+      c.status = "connected"
+      startCallTimer(c)
+    })
+  } else {
+    calls.value.forEach((c) => {
+      c.status = "on-hold"
+      stopCallTimer(c)
+    })
+  }
+}
+
+function dropCall(callId) {
+  const idx = calls.value.findIndex((c) => c.id === callId)
+  if (idx === -1) return
+  const call = calls.value[idx]
+  stopCallTimer(call)
+  clearRingTimer(call)
+  calls.value.splice(idx, 1)
+
+  if (calls.value.length <= 1) {
+    isMerged.value = false
+    // Resume the remaining call if it was on hold
+    const remaining = calls.value[0]
+    if (remaining && remaining.status === "on-hold") {
+      remaining.status = "connected"
+      startCallTimer(remaining)
+    }
+  }
+
+  if (calls.value.length === 0) {
+    endSession()
+  }
+}
+
+function requestHangUp() {
+  if (!primaryCall.value) return
+  // No confirmation for ringing calls
+  if (primaryCall.value.status === "ringing") {
+    hangUp()
+    return
+  }
+  if (isMerged.value) {
+    confirmAction.value = { type: "hangup", message: "End conference? All participants will be disconnected.", label: "End All" }
+  } else if (hasTwoCalls.value) {
+    confirmAction.value = { type: "hangup", message: "End this call? The held call will resume.", label: "End" }
+  } else {
+    confirmAction.value = { type: "hangup", message: "End this call?", label: "End" }
+  }
+}
+
+function requestMerge() {
+  confirmAction.value = { type: "merge", message: "Merge these calls into a conference?", label: "Merge" }
+}
+
+function requestDrop(call) {
+  confirmAction.value = { type: "drop", callId: call.id, message: `Remove ${call.name} from the conference?`, label: "Remove" }
+}
+
+function executeConfirm() {
+  if (!confirmAction.value) return
+  const action = confirmAction.value
+  confirmAction.value = null
+  if (action.type === "hangup") hangUp()
+  else if (action.type === "merge") mergeCalls()
+  else if (action.type === "drop") dropCall(action.callId)
+}
+
+function cancelConfirm() {
+  confirmAction.value = null
+}
+
+function hangUpAll() {
+  calls.value.forEach((c) => {
+    stopCallTimer(c)
+    clearRingTimer(c)
+  })
+  const hadCalls = calls.value.length > 0
+  calls.value = []
+  isMerged.value = false
+  isMuted.value = false
+  confirmAction.value = null
+  showNewCall.value = false
+  showCallMenu.value = false
+  showCustomNumber.value = false
+  callNumber.value = ""
+  if (hadCalls) endSession()
+}
+
+// Recording helpers
+function formatDuration(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${String(secs).padStart(2, "0")}`
+}
+
+function generateFakeWaveform() {
+  const bars = 40
+  const waveform = []
+  for (let i = 0; i < bars; i++) {
+    const position = i / bars
+    const envelope = position < 0.1 ? position / 0.1
+      : position > 0.85 ? (1 - position) / 0.15
+      : 1
+    const randomness = 0.3 + Math.random() * 0.7
+    waveform.push(Math.max(0.15, Math.min(1, envelope * randomness)))
+  }
+  return waveform
+}
+
+function generateFakeTranscript(customerName, durationSeconds) {
+  const firstName = customerName.split(" ")[0]
+  const allLines = [
+    { speaker: "Agent", offset: 0, text: `Hi ${firstName}, thanks for calling in. How can I help you today?` },
+    { speaker: firstName, offset: 8, text: "Yeah, I've been having some issues with my internet connection dropping out." },
+    { speaker: "Agent", offset: 18, text: "I'm sorry to hear that. Let me pull up your account and take a look." },
+    { speaker: firstName, offset: 28, text: "It's been happening on and off for the past couple of days." },
+    { speaker: "Agent", offset: 38, text: "I can see some signal fluctuations on your line. Let me run a quick diagnostic." },
+    { speaker: "Agent", offset: 55, text: "Alright, I've refreshed your connection from our end. That should help stabilize things." },
+    { speaker: firstName, offset: 68, text: "Okay great, I'll keep an eye on it. Anything else I should do?" },
+    { speaker: "Agent", offset: 78, text: `If it happens again, don't hesitate to call back. Is there anything else I can help with, ${firstName}?` },
+  ]
+  return allLines
+    .filter((l) => l.offset < durationSeconds)
+    .map((l) => ({ speaker: l.speaker, time: formatDuration(l.offset), text: l.text }))
+}
+
+function playbackElapsedFor(msg) {
+  if (playingRecordingId.value !== msg.id) return "0:00"
+  return formatDuration(Math.floor(playbackProgress.value * msg.recording.duration))
+}
+
+// Recording playback
+function togglePlayback(msg) {
+  if (playingRecordingId.value === msg.id) {
+    stopPlayback()
+  } else {
+    stopPlayback()
+    startPlayback(msg)
+  }
+}
+
+function startPlayback(msg) {
+  playingRecordingId.value = msg.id
+  playbackProgress.value = 0
+  const duration = msg.recording.duration
+  const stepMs = 50
+  const increment = stepMs / (duration * 1000)
+  playbackTimerHandle.value = setInterval(() => {
+    playbackProgress.value += increment
+    if (playbackProgress.value >= 1) {
+      playbackProgress.value = 1
+      stopPlayback()
+    }
+  }, stepMs)
+}
+
+function stopPlayback() {
+  if (playbackTimerHandle.value) {
+    clearInterval(playbackTimerHandle.value)
+    playbackTimerHandle.value = null
+  }
+  playingRecordingId.value = null
+  playbackProgress.value = 0
+}
+
+function toggleTranscript(msgId) {
+  expandedTranscriptId.value = expandedTranscriptId.value === msgId ? null : msgId
+}
+
 function scrollToBottom() {
   nextTick(() => {
     if (messagesEl.value) {
@@ -362,7 +1038,7 @@ function scrollToBottom() {
 function sendReply() {
   const text = replyText.value.trim()
   if (!text || !props.ticketId) return
-  sharedSendReply(props.ticketId, text)
+  sharedSendReply(props.ticketId, text, activeChannel.value)
   replyText.value = ""
   scrollToBottom()
 }
@@ -393,10 +1069,25 @@ function handleAction(action) {
   console.log(`Action triggered: ${action} for ticket ${props.ticketId}`)
 }
 
+watch(showCustomNumber, (val) => {
+  if (val) nextTick(() => customNumberInput.value?.focus())
+})
+
 watch(() => props.ticketId, () => {
   replyText.value = ""
+  replyChannel.value = null
   activeTab.value = "comms"
+  hangUpAll()
+  stopPlayback()
   scrollToBottom()
+})
+
+onBeforeUnmount(() => {
+  calls.value.forEach((c) => {
+    stopCallTimer(c)
+    clearRingTimer(c)
+  })
+  stopPlayback()
 })
 </script>
 
@@ -660,6 +1351,7 @@ watch(() => props.ticketId, () => {
   letter-spacing: 0.03em;
 }
 
+.msg-channel--chat { background: rgba(56, 189, 248, 0.1); color: #7dd3fc; }
 .msg-channel--email { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; }
 .msg-channel--sms { background: rgba(52, 211, 153, 0.1); color: #6ee7b7; }
 .msg-channel--phone { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
@@ -1154,6 +1846,64 @@ watch(() => props.ticketId, () => {
   line-height: 1.6;
 }
 
+/* ── Channel bar ────────────────────────────────────────── */
+
+.channel-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.channel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  color: rgba(148, 163, 184, 0.5);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.channel-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #94a3b8;
+}
+
+.channel-btn--active.channel-btn--chat {
+  background: rgba(56, 189, 248, 0.1);
+  border-color: rgba(56, 189, 248, 0.25);
+  color: #7dd3fc;
+}
+
+.channel-btn--active.channel-btn--sms {
+  background: rgba(52, 211, 153, 0.1);
+  border-color: rgba(52, 211, 153, 0.25);
+  color: #6ee7b7;
+}
+
+.channel-btn--active.channel-btn--email {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+
+.channel-btn--active.channel-btn--phone {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+}
+
+.channel-label {
+  line-height: 1;
+}
+
 /* ── Compose ────────────────────────────────────────────── */
 
 .thread-compose {
@@ -1254,6 +2004,423 @@ watch(() => props.ticketId, () => {
   flex-shrink: 0;
 }
 
+/* ── Phone call UI ─────────────────────────────────────── */
+
+.phone-ui {
+  padding: 8px 0 0;
+  animation: content-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.phone-status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 10px;
+  transition: all 0.25s;
+}
+
+.phone-status-card--ringing {
+  background: rgba(245, 158, 11, 0.06);
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.phone-status-card--connected {
+  background: rgba(52, 211, 153, 0.06);
+  border-color: rgba(52, 211, 153, 0.2);
+}
+
+.phone-status-card--on-hold {
+  background: rgba(99, 102, 241, 0.06);
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+.phone-status-card--held {
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  opacity: 0.75;
+}
+
+.phone-status-card--held .phone-status-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.phone-status-card--held .phone-status-label {
+  font-size: 12px;
+}
+
+.phone-status-card--held .phone-status-number {
+  font-size: 12px;
+}
+
+.phone-status-card--held .phone-timer {
+  font-size: 12px;
+}
+
+.phone-status-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  transition: all 0.25s;
+}
+
+.phone-status-card--connected .phone-status-icon {
+  background: rgba(52, 211, 153, 0.12);
+  color: #6ee7b7;
+}
+
+.phone-status-card--on-hold .phone-status-icon {
+  background: rgba(99, 102, 241, 0.12);
+  color: #a5b4fc;
+}
+
+.phone-status-icon--ringing {
+  animation: pulse-ring 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.1); opacity: 0.7; }
+}
+
+.phone-status-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.phone-status-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.phone-status-number {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.5);
+  margin-top: 1px;
+}
+
+/* Call menu */
+
+.call-menu-wrap {
+  position: relative;
+  flex: 1;
+}
+
+.call-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: content-up 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 10;
+}
+
+.call-menu--inline {
+  position: static;
+  margin-bottom: 10px;
+  animation: content-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.call-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.call-menu-item:hover {
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.call-menu-item--other {
+  color: rgba(148, 163, 184, 0.6);
+}
+
+.call-menu-text {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+
+.call-menu-label {
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.call-menu-number {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.5);
+  line-height: 1.3;
+}
+
+.call-menu-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 2px 8px;
+}
+
+.call-menu-custom {
+  display: flex;
+  gap: 4px;
+  padding: 6px 6px 4px;
+}
+
+.call-menu-input {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  color: #e2e8f0;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.call-menu-input::placeholder {
+  color: rgba(148, 163, 184, 0.3);
+}
+
+.call-menu-input:focus {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.call-menu-dial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 7px;
+  background: rgba(245, 158, 11, 0.12);
+  color: #fcd34d;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.call-menu-dial:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.call-menu-dial:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.phone-timer {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #fcd34d;
+  flex-shrink: 0;
+}
+
+.phone-status-card--on-hold .phone-timer {
+  color: #a5b4fc;
+}
+
+/* Participants */
+
+.phone-participants {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+}
+
+.phone-participant {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.phone-participant:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.phone-participant-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.phone-participant-dot--connected {
+  background: #6ee7b7;
+}
+
+.phone-participant-dot--ringing {
+  background: #fcd34d;
+  animation: pulse-ring 1.2s ease-in-out infinite;
+}
+
+.phone-participant-dot--on-hold {
+  background: #a5b4fc;
+}
+
+.phone-participant-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  flex: 1;
+  min-width: 0;
+}
+
+.phone-participant-status {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.45);
+  text-transform: capitalize;
+}
+
+.phone-participant-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: all 0.15s;
+}
+
+.phone-participant:hover .phone-participant-remove {
+  opacity: 1;
+}
+
+.phone-participant-remove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+/* Phone buttons */
+
+.phone-controls {
+  display: flex;
+  gap: 6px;
+}
+
+.phone-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(148, 163, 184, 0.7);
+  transition: all 0.15s;
+}
+
+.phone-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+
+.phone-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.phone-btn--active {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.25);
+  color: #a5b4fc;
+}
+
+.phone-btn--call {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+}
+
+.phone-btn--call:hover {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+
+.phone-btn--end {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+.phone-btn--end:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+/* Confirmation dialog */
+
+.phone-confirm {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  margin-bottom: 10px;
+  animation: content-up 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.phone-confirm-message {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+}
+
+.phone-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* ── Message transitions ────────────────────────────────── */
 
 .msg-enter-active {
@@ -1263,5 +2430,182 @@ watch(() => props.ticketId, () => {
 .msg-enter-from {
   opacity: 0;
   transform: translateY(8px);
+}
+
+/* ── Recording card ────────────────────────────────────── */
+
+.message--system {
+  justify-content: center;
+}
+
+.recording-card {
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  border-radius: 14px;
+  padding: 16px;
+  animation: content-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.recording-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.recording-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+.recording-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e8f0;
+  flex: 1;
+}
+
+.recording-duration {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.5);
+}
+
+/* ── Waveform player ───────────────────────────────────── */
+
+.waveform-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.waveform-play-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.waveform-play-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+  transform: scale(1.05);
+}
+
+.waveform-play-btn:active {
+  transform: scale(0.95);
+}
+
+.waveform-bars {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 36px;
+}
+
+.waveform-bar {
+  flex: 1;
+  min-width: 2px;
+  max-width: 5px;
+  border-radius: 1px;
+  background: rgba(245, 158, 11, 0.2);
+  transition: background 0.1s;
+}
+
+.waveform-bar--played {
+  background: #fbbf24;
+}
+
+.waveform-time {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.45);
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+/* ── Transcript ────────────────────────────────────────── */
+
+.transcript-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 0 0;
+  background: none;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #c084fc;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.transcript-toggle:hover {
+  color: #d8b4fe;
+}
+
+.transcript-toggle svg:last-child {
+  margin-left: auto;
+  transition: transform 0.2s ease;
+}
+
+.transcript-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 10px;
+  animation: content-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.transcript-line {
+  display: flex;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.transcript-time {
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.35);
+  flex-shrink: 0;
+  min-width: 32px;
+}
+
+.transcript-speaker {
+  font-weight: 600;
+  color: #94a3b8;
+  flex-shrink: 0;
+  min-width: 50px;
+}
+
+.transcript-text {
+  color: #cbd5e1;
 }
 </style>

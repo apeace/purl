@@ -241,13 +241,13 @@ function toggleStar(id) {
   if (ticket) ticket.starred = !ticket.starred
 }
 
-function sendReply(id, text) {
+function sendReply(id, text, channel = "email") {
   const ticket = tickets.value.find((t) => t.id === id)
   if (!ticket) return
   ticket.messages.push({
     id: ticket.messages.length + 1,
     from: "agent",
-    channel: "email",
+    channel,
     time: "just now",
     text,
   })
