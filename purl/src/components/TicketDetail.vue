@@ -1,5 +1,5 @@
 <template>
-  <div class="ticket-detail">
+  <div v-if="ticket" class="ticket-detail">
     <!-- Thread header -->
     <div class="thread-header">
       <div class="thread-meta">
@@ -73,7 +73,7 @@
                   <Phone :size="16" />
                 </div>
                 <div class="recording-title">Call Recording</div>
-                <span class="recording-duration">{{ formatDuration(msg.recording.duration) }}</span>
+                <span class="recording-duration">{{ formatDuration(msg.recording!.duration) }}</span>
                 <span class="msg-channel msg-channel--phone">
                   <Phone :size="10" />
                   phone
@@ -87,16 +87,16 @@
                 </button>
                 <div class="waveform-bars">
                   <div
-                    v-for="(bar, i) in msg.recording.waveform"
+                    v-for="(bar, i) in msg.recording!.waveform"
                     :key="i"
                     class="waveform-bar"
-                    :class="{ 'waveform-bar--played': playingRecordingId === msg.id && i / msg.recording.waveform.length <= playbackProgress }"
+                    :class="{ 'waveform-bar--played': playingRecordingId === msg.id && i / msg.recording!.waveform.length <= playbackProgress }"
                     :style="{ height: `${bar * 100}%` }"
                   />
                 </div>
                 <div class="waveform-time">
                   <span>{{ playbackElapsedFor(msg) }}</span>
-                  <span>{{ formatDuration(msg.recording.duration) }}</span>
+                  <span>{{ formatDuration(msg.recording!.duration) }}</span>
                 </div>
               </div>
               <button class="transcript-toggle" @click="toggleTranscript(msg.id)">
@@ -106,7 +106,7 @@
               </button>
               <div v-if="expandedTranscriptId === msg.id" class="transcript-body">
                 <div
-                  v-for="(line, i) in msg.recording.transcript"
+                  v-for="(line, i) in msg.recording!.transcript"
                   :key="i"
                   class="transcript-line"
                 >
@@ -169,7 +169,7 @@
           placeholder="Add internal notes about this subscriber…"
           rows="4"
           :value="ticket.notes"
-          @input="updateNotes(ticketId, $event.target.value)"
+          @input="updateNotes(ticketId, ($event.target as HTMLTextAreaElement).value)"
         />
       </div>
     </div>
@@ -271,7 +271,7 @@
         <select
           class="settings-select"
           :value="ticket.assignee"
-          @change="setAssignee(ticketId, $event.target.value)"
+          @change="setAssignee(ticketId, ($event.target as HTMLSelectElement).value)"
         >
           <option v-for="a in assigneeOptions" :key="a" :value="a">{{ a }}</option>
         </select>
@@ -608,16 +608,19 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets.js"
+import { useTickets } from "../composables/useTickets"
+import type { Message } from "../composables/useTickets"
 
-const props = defineProps({
-  ticketId: { type: Number, required: true },
-})
+const props = defineProps<{
+  ticketId: string
+}>()
 
-const emit = defineEmits(["resolve"])
+const emit = defineEmits<{
+  resolve: []
+}>()
 
 const {
   addTag,
@@ -635,28 +638,45 @@ const {
 const activeTab = ref("comms")
 const composeCollapsed = ref(true)
 const replyText = ref("")
-const replyChannel = ref(null)
+const replyChannel = ref<string | null>(null)
 const newTag = ref("")
-const messagesEl = ref(null)
+const messagesEl = ref<HTMLElement | null>(null)
 
 // Phone call state
-const calls = ref([])
+interface Call {
+  id: number
+  name: string
+  number: string
+  status: string
+  seconds: number
+  timerHandle: ReturnType<typeof setInterval> | null
+  ringHandle: ReturnType<typeof setTimeout> | null
+}
+
+interface ConfirmAction {
+  type: string
+  message: string
+  label: string
+  callId?: number
+}
+
+const calls = ref<Call[]>([])
 const isMerged = ref(false)
 const isMuted = ref(false)
 const showCallMenu = ref(false)
 const showCustomNumber = ref(false)
 const showNewCall = ref(false)
-const customNumberInput = ref(null)
+const customNumberInput = ref<HTMLInputElement | null>(null)
 const callNumber = ref("")
-const confirmAction = ref(null)
-const sessionStartTime = ref(null)
+const confirmAction = ref<ConfirmAction | null>(null)
+const sessionStartTime = ref<number | null>(null)
 let callIdCounter = 0
 
 // Recording playback state
-const playingRecordingId = ref(null)
+const playingRecordingId = ref<number | null>(null)
 const playbackProgress = ref(0)
-const playbackTimerHandle = ref(null)
-const expandedTranscriptId = ref(null)
+const playbackTimerHandle = ref<ReturnType<typeof setInterval> | null>(null)
+const expandedTranscriptId = ref<number | null>(null)
 
 const channelOptions = [
   { id: "chat", icon: MessageCircle, label: "Chat" },
@@ -699,35 +719,35 @@ const hasTwoCalls = computed(() => calls.value.length === 2)
 const canStartSecondCall = computed(() => calls.value.length === 1 && calls.value[0].status === "on-hold" && !isMerged.value)
 const primaryCall = computed(() => activeCall.value || heldCall.value)
 
-function formattedTime(call) {
+function formattedTime(call: Call) {
   const mins = Math.floor(call.seconds / 60)
   const secs = call.seconds % 60
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`
 }
 
 // Phone call functions
-function startCallTimer(call) {
+function startCallTimer(call: Call) {
   stopCallTimer(call)
   call.timerHandle = setInterval(() => {
     call.seconds++
   }, 1000)
 }
 
-function stopCallTimer(call) {
+function stopCallTimer(call: Call) {
   if (call.timerHandle) {
     clearInterval(call.timerHandle)
     call.timerHandle = null
   }
 }
 
-function clearRingTimer(call) {
+function clearRingTimer(call: Call) {
   if (call.ringHandle) {
     clearTimeout(call.ringHandle)
     call.ringHandle = null
   }
 }
 
-function addRecording(duration) {
+function addRecording(duration: number) {
   if (duration > 0 && ticket.value) {
     ticket.value.messages.push({
       id: ticket.value.messages.length + 1,
@@ -869,7 +889,7 @@ function toggleHoldMerged() {
   }
 }
 
-function dropCall(callId) {
+function dropCall(callId: number) {
   const idx = calls.value.findIndex((c) => c.id === callId)
   if (idx === -1) return
   const call = calls.value[idx]
@@ -912,7 +932,7 @@ function requestMerge() {
   confirmAction.value = { type: "merge", message: "Merge these calls into a conference?", label: "Merge" }
 }
 
-function requestDrop(call) {
+function requestDrop(call: Call) {
   confirmAction.value = { type: "drop", callId: call.id, message: `Remove ${call.name} from the conference?`, label: "Remove" }
 }
 
@@ -922,7 +942,7 @@ function executeConfirm() {
   confirmAction.value = null
   if (action.type === "hangup") hangUp()
   else if (action.type === "merge") mergeCalls()
-  else if (action.type === "drop") dropCall(action.callId)
+  else if (action.type === "drop") dropCall(action.callId!)
 }
 
 function cancelConfirm() {
@@ -947,7 +967,7 @@ function hangUpAll() {
 }
 
 // Recording helpers
-function formatDuration(seconds) {
+function formatDuration(seconds: number) {
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${String(secs).padStart(2, "0")}`
@@ -967,7 +987,7 @@ function generateFakeWaveform() {
   return waveform
 }
 
-function generateFakeTranscript(customerName, durationSeconds) {
+function generateFakeTranscript(customerName: string, durationSeconds: number) {
   const firstName = customerName.split(" ")[0]
   const allLines = [
     { speaker: "Agent", offset: 0, text: `Hi ${firstName}, thanks for calling in. How can I help you today?` },
@@ -984,13 +1004,13 @@ function generateFakeTranscript(customerName, durationSeconds) {
     .map((l) => ({ speaker: l.speaker, time: formatDuration(l.offset), text: l.text }))
 }
 
-function playbackElapsedFor(msg) {
+function playbackElapsedFor(msg: Message) {
   if (playingRecordingId.value !== msg.id) return "0:00"
-  return formatDuration(Math.floor(playbackProgress.value * msg.recording.duration))
+  return formatDuration(Math.floor(playbackProgress.value * msg.recording!.duration))
 }
 
 // Recording playback
-function togglePlayback(msg) {
+function togglePlayback(msg: Message) {
   if (playingRecordingId.value === msg.id) {
     stopPlayback()
   } else {
@@ -999,10 +1019,10 @@ function togglePlayback(msg) {
   }
 }
 
-function startPlayback(msg) {
+function startPlayback(msg: Message) {
   playingRecordingId.value = msg.id
   playbackProgress.value = 0
-  const duration = msg.recording.duration
+  const duration = msg.recording!.duration
   const stepMs = 50
   const increment = stepMs / (duration * 1000)
   playbackTimerHandle.value = setInterval(() => {
@@ -1023,7 +1043,7 @@ function stopPlayback() {
   playbackProgress.value = 0
 }
 
-function toggleTranscript(msgId) {
+function toggleTranscript(msgId: number) {
   expandedTranscriptId.value = expandedTranscriptId.value === msgId ? null : msgId
 }
 
@@ -1064,7 +1084,7 @@ function handleAddTag() {
   newTag.value = ""
 }
 
-function handleAction(action) {
+function handleAction(action: string) {
   // Placeholder — will wire up real actions later
   console.log(`Action triggered: ${action} for ticket ${props.ticketId}`)
 }

@@ -139,7 +139,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { BarChart3, Bell, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
@@ -147,7 +147,7 @@ import { useRoute } from "vue-router"
 const open = ref(false)
 const collapsed = ref(false)
 const cmdOpen = ref(false)
-const cmdInput = ref(null)
+const cmdInput = ref<HTMLInputElement | null>(null)
 
 const mainNav = [
   { path: "/go", label: "Go", icon: Zap },
@@ -168,7 +168,7 @@ const route = useRoute()
 
 const navResetKey = ref(0)
 
-function onNavClick(path) {
+function onNavClick(path: string) {
   open.value = false
   if (route.path === path) {
     navResetKey.value++
@@ -192,7 +192,7 @@ watch(open, (val) => {
   document.body.style.overflow = val ? "hidden" : ""
 })
 
-function onKeyDown(e) {
+function onKeyDown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     open.value = false
     cmdOpen.value = false

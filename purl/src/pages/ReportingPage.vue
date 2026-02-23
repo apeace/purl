@@ -156,18 +156,18 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { Activity, AlertTriangle, BookOpen, Clock, Heart, ShieldCheck, Users } from "lucide-vue-next"
 import { computed, ref } from "vue"
-import { useTickets } from "../composables/useTickets.js"
-import { STATUS_COLORS } from "../utils/colors.js"
+import { useTickets } from "../composables/useTickets"
+import { STATUS_COLORS } from "../utils/colors"
 
 const { tickets } = useTickets()
 
 const ranges = ["7D", "30D", "90D", "1Y"]
 const activeRange = ref("30D")
 
-function isGood({ change, positiveDir }) {
+function isGood({ change, positiveDir }: { change: number; positiveDir: string }) {
   return (positiveDir === "down" && change < 0) || (positiveDir === "up" && change > 0)
 }
 
@@ -212,7 +212,7 @@ const volumeAreaPath = computed(() =>
 const circumference = 2 * Math.PI * 46
 
 const statusCounts = computed(() => {
-  const counts = { new: 0, open: 0, pending: 0, escalated: 0 }
+  const counts: Record<string, number> = { new: 0, open: 0, pending: 0, escalated: 0 }
   for (const t of tickets.value) {
     if (counts[t.status] !== undefined) counts[t.status]++
   }
@@ -262,7 +262,7 @@ const miniCharts = [
   { label: "FCR Rate", value: "67%", change: 5, good: true, color: "#f59e0b", data: [58, 59, 61, 60, 63, 62, 64, 65, 66, 67] },
 ]
 
-function sparkLine(data) {
+function sparkLine(data: number[]) {
   const max = Math.max(...data) * 1.1
   const min = Math.min(...data) * 0.9
   const range = max - min || 1
@@ -273,7 +273,7 @@ function sparkLine(data) {
   }).join(" ")
 }
 
-function sparkArea(data) {
+function sparkArea(data: number[]) {
   return `${sparkLine(data)} L${miniW},${miniH} L0,${miniH} Z`
 }
 

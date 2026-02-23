@@ -18,12 +18,15 @@
   </svg>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from "vue"
 
-const props = defineProps({
-  color: { type: String, default: "#818cf8" },
-  data: { type: Array, default: () => [4, 7, 5, 9, 6, 8, 3, 7, 10, 6, 8, 9] },
+const props = withDefaults(defineProps<{
+  color?: string
+  data?: number[]
+}>(), {
+  color: "#818cf8",
+  data: () => [4, 7, 5, 9, 6, 8, 3, 7, 10, 6, 8, 9],
 })
 
 const w = 80

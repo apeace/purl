@@ -303,13 +303,13 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Clock, Inbox, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import { useTickets } from "../composables/useTickets.js"
-import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors.js"
+import { useTickets } from "../composables/useTickets"
+import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors"
 
 const {
   archiveTicket,
@@ -341,31 +341,31 @@ const sortOptions = [
   { value: "assignee", label: "Assignee" },
 ]
 
-const sortLabels = { time: "Last Updated", priority: "Priority", status: "Status", assignee: "Assignee" }
+const sortLabels: Record<string, string> = { time: "Last Updated", priority: "Priority", status: "Status", assignee: "Assignee" }
 
-function toggleSet(set, val) {
+function toggleSet(set: Set<string>, val: string) {
   if (set.has(val)) set.delete(val)
   else set.add(val)
 }
 
 // ── Dropdowns ────────────────────────────────────────────
 
-const openDropdown = ref(null)
-const toolbarEl = ref(null)
-const priorityWrapEl = ref(null)
-const statusWrapEl = ref(null)
-const assigneeWrapEl = ref(null)
-const sortWrapEl = ref(null)
+const openDropdown = ref<string | null>(null)
+const toolbarEl = ref<HTMLElement | null>(null)
+const priorityWrapEl = ref<HTMLElement | null>(null)
+const statusWrapEl = ref<HTMLElement | null>(null)
+const assigneeWrapEl = ref<HTMLElement | null>(null)
+const sortWrapEl = ref<HTMLElement | null>(null)
 
-function onPointerDown(e) {
+function onPointerDown(e: PointerEvent) {
   if (!openDropdown.value) return
   const wraps = [priorityWrapEl.value, statusWrapEl.value, assigneeWrapEl.value, sortWrapEl.value]
-  if (!wraps.some((w) => w?.contains(e.target))) {
+  if (!wraps.some((w) => w?.contains(e.target as Node))) {
     openDropdown.value = null
   }
 }
 
-function onKeydown(e) {
+function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     if (selectedTicketId.value) {
       selectedTicketId.value = null
@@ -387,7 +387,7 @@ onBeforeUnmount(() => {
 const priorityColors = PRIORITY_COLORS
 const statusColors = STATUS_PILL
 
-function timeColor(createdAt) {
+function timeColor(createdAt: string) {
   const mins = (Date.now() - new Date(createdAt).getTime()) / 60000
   if (mins < 30) return "#fca5a5"
   if (mins < 120) return "#fcd34d"
@@ -426,7 +426,7 @@ const emails = computed(() => {
     priority: t.priority,
     status: t.status,
     assignee: t.assignee,
-    assigneeColor: t.assignee !== "Unassigned" ? avatarColor(t.assignee) : null,
+    assigneeColor: t.assignee !== "Unassigned" ? avatarColor(t.assignee) : undefined,
     company: t.company,
     createdAt: t.createdAt,
     wait: t.wait,
@@ -435,13 +435,13 @@ const emails = computed(() => {
 
 // ── Selection ────────────────────────────────────────────
 
-const selected = reactive(new Set())
+const selected = reactive(new Set<string>())
 
 const anySelected = computed(() => selected.size > 0)
 const allSelected = computed(() => selected.size === emails.value.length && emails.value.length > 0)
 const someSelected = computed(() => selected.size > 0 && selected.size < emails.value.length)
 
-function toggleSelect(id) {
+function toggleSelect(id: string) {
   if (selected.has(id)) selected.delete(id)
   else selected.add(id)
 }
@@ -473,14 +473,14 @@ function markReadSelected() {
 
 // ── Row actions ──────────────────────────────────────────
 
-const selectedTicketId = ref(null)
+const selectedTicketId = ref<string | null>(null)
 
-function openEmail(email) {
+function openEmail(email: { id: string }) {
   markRead(email.id)
   selectedTicketId.value = email.id
 }
 
-function handleToggleStar(email) {
+function handleToggleStar(email: { id: string }) {
   toggleStar(email.id)
 }
 
@@ -509,7 +509,7 @@ function goNext() {
 
 function handleResolve() {
   const next = displayQueue.value[0] ?? null
-  resolveTicket(selectedTicketId.value)
+  resolveTicket(selectedTicketId.value!)
   selectedTicketId.value = next ? next.id : null
 }
 

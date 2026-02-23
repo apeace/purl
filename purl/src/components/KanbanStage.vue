@@ -49,38 +49,54 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue"
 
-const props = defineProps({
-  title: String,
-  count: Number,
-  color: String,
-  items: Array,
-  status: String,
-  draggingId: String,
-  delay: { type: Number, default: 0 },
+interface KanbanItem {
+  id: string
+  name: string
+  company: string
+  subject: string
+  priority: string
+  avatarColor: string
+}
+
+const props = withDefaults(defineProps<{
+  title: string
+  count: number
+  color: string
+  items: KanbanItem[]
+  status: string
+  draggingId: string | null
+  delay?: number
+}>(), {
+  delay: 0,
 })
 
-const emit = defineEmits(["select", "drop", "dragStart", "dragEnd"])
+const emit = defineEmits<{
+  select: [id: string]
+  drop: [payload: { ticketId: string; status: string }]
+  dragStart: [id: string]
+  dragEnd: []
+}>()
 
 const visible = ref(false)
 const dragOver = ref(false)
 const dropIndex = ref(-1)
-const stageCardsEl = ref(null)
+const stageCardsEl = ref<HTMLElement | null>(null)
 // Counter prevents false dragleave when entering child elements
 let enterCount = 0
 
 const isSource = computed(() => props.items.some((i) => i.id === props.draggingId))
 
-function onDragStart(event, id) {
-  event.dataTransfer.effectAllowed = "move"
-  event.dataTransfer.setData("text/plain", id)
+function onDragStart(event: DragEvent, id: string) {
+  event.dataTransfer!.effectAllowed = "move"
+  event.dataTransfer!.setData("text/plain", id)
   // Defer so the browser captures the drag image before we hide the card
   requestAnimationFrame(() => emit("dragStart", id))
 }
 
-function onDragOver(event) {
+function onDragOver(event: DragEvent) {
   if (!stageCardsEl.value || !props.draggingId || isSource.value) return
   const slots = stageCardsEl.value.querySelectorAll(".card-slot")
   let index = slots.length
@@ -107,11 +123,11 @@ function onDragLeave() {
   }
 }
 
-function onDrop(event) {
+function onDrop(event: DragEvent) {
   enterCount = 0
   dragOver.value = false
   dropIndex.value = -1
-  const ticketId = event.dataTransfer.getData("text/plain")
+  const ticketId = event.dataTransfer!.getData("text/plain")
   if (ticketId) emit("drop", { ticketId, status: props.status })
 }
 

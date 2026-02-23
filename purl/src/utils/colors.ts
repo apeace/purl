@@ -1,11 +1,11 @@
-export const PRIORITY_COLORS = {
+export const PRIORITY_COLORS: Record<string, string> = {
   urgent: "#ef4444",
   high: "#f97316",
   medium: "#f59e0b",
   low: "#34d399",
 }
 
-export const STATUS_COLORS = {
+export const STATUS_COLORS: Record<string, string> = {
   new: "#38bdf8",
   open: "#60a5fa",
   pending: "#a855f7",
@@ -15,7 +15,7 @@ export const STATUS_COLORS = {
 }
 
 // { bg: "rgba(..., 0.12)", text: "#hex" } for each status
-export const STATUS_PILL = Object.fromEntries(
+export const STATUS_PILL: Record<string, { bg: string; text: string }> = Object.fromEntries(
   Object.entries(STATUS_COLORS).map(([k, hex]) => {
     const r = parseInt(hex.slice(1, 3), 16)
     const g = parseInt(hex.slice(3, 5), 16)

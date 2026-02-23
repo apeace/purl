@@ -31,7 +31,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 // Shift Health — weighted composite of four operational dimensions.
 // Score = (0.30 × Backlog) + (0.30 × Clearance) + (0.25 × Response) + (0.15 × Efficiency)
 //
@@ -43,7 +43,7 @@
 
 import { ChevronDown, TrendingDown, TrendingUp } from "lucide-vue-next"
 import { computed, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets.js"
+import { useTickets } from "../composables/useTickets"
 
 const { hudOpen, hudResolvedToday } = useTickets()
 

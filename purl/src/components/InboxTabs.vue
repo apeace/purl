@@ -15,16 +15,20 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { Inbox, Star, User, UserX } from "lucide-vue-next"
 import { computed } from "vue"
-import { useTickets } from "../composables/useTickets.js"
+import { useTickets } from "../composables/useTickets"
 
-defineProps({
-  modelValue: { type: String, default: "all" },
+withDefaults(defineProps<{
+  modelValue?: string
+}>(), {
+  modelValue: "all",
 })
 
-defineEmits(["update:modelValue"])
+defineEmits<{
+  "update:modelValue": [value: string]
+}>()
 
 const { CURRENT_USER, tickets } = useTickets()
 
