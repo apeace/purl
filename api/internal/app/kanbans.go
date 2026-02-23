@@ -1,6 +1,7 @@
 package app
 
 import (
+	"database/sql"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -148,24 +149,29 @@ func (a *App) listKanbans(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(boards)
 }
 
-// requireBoardInOrg checks that the board URL param exists and belongs to the org.
-// Returns the board ID on success, or writes a 404 and returns "".
+// requireBoardInOrg checks that the board URL param exists, belongs to the org,
+// and is not a default board (which is read-only).
+// Returns the board ID on success, or writes an appropriate error and returns "".
 func (a *App) requireBoardInOrg(w http.ResponseWriter, r *http.Request) string {
 	boardID := chi.URLParam(r, "boardID")
 	o := orgFromContext(r.Context())
 
-	var exists bool
+	var isDefault bool
 	err := a.db.QueryRowContext(r.Context(),
-		`SELECT EXISTS(SELECT 1 FROM boards WHERE id = $1 AND org_id = $2)`,
+		`SELECT is_default FROM boards WHERE id = $1 AND org_id = $2`,
 		boardID, o.ID,
-	).Scan(&exists)
+	).Scan(&isDefault)
+	if err == sql.ErrNoRows {
+		http.Error(w, "board not found", http.StatusNotFound)
+		return ""
+	}
 	if err != nil {
 		http.Error(w, "query failed", http.StatusInternalServerError)
 		log.Printf("requireBoardInOrg query: %v", err)
 		return ""
 	}
-	if !exists {
-		http.Error(w, "board not found", http.StatusNotFound)
+	if isDefault {
+		http.Error(w, "default board is read-only", http.StatusForbidden)
 		return ""
 	}
 	return boardID
