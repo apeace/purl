@@ -37,8 +37,6 @@ func (a *App) Handler() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
-	r.Post("/webhooks/zendesk/{orgSlug}", a.handleZendeskWebhook)
-
 	r.Group(func(r chi.Router) {
 		r.Use(a.requireAPIKey)
 		r.Get("/org", a.getOrg)
