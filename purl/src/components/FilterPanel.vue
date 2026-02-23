@@ -64,20 +64,20 @@
           </div>
         </div>
 
-        <!-- Status -->
+        <!-- Status / Stages -->
         <div class="filter-section">
-          <div class="filter-label">Status</div>
+          <div class="filter-label">{{ customStages?.length ? 'Column' : 'Status' }}</div>
           <div class="chip-row">
             <button
-              v-for="s in statuses"
-              :key="s"
+              v-for="s in statusItems"
+              :key="s.value"
               class="chip chip--status"
               :class="[
-                `chip--${s}`,
-                { 'chip--on': filterStatuses.has(s) },
+                `chip--${s.value}`,
+                { 'chip--on': filterStatuses.has(s.value) },
               ]"
-              @click="toggleSet(filterStatuses, s)"
-            >{{ s }}</button>
+              @click="toggleSet(filterStatuses, s.value)"
+            >{{ s.label }}</button>
           </div>
         </div>
 
@@ -94,8 +94,14 @@
 
 <script setup lang="ts">
 import { Search, SlidersHorizontal, X } from "lucide-vue-next"
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useTickets } from "../composables/useTickets"
+
+const props = withDefaults(defineProps<{
+  customStages?: { id: string; name: string; color: string }[]
+}>(), {
+  customStages: undefined,
+})
 
 const {
   activeFilterCount,
@@ -108,7 +114,13 @@ const {
 } = useTickets()
 
 const priorities = ["low", "medium", "high", "urgent"]
-const statuses = ["new", "open", "pending", "escalated", "solved", "closed"]
+const defaultStatuses = ["new", "open", "pending", "escalated", "solved", "closed"]
+const statusItems = computed(() => {
+  if (props.customStages?.length) {
+    return props.customStages.map((s) => ({ value: s.id, label: s.name }))
+  }
+  return defaultStatuses.map((s) => ({ value: s, label: s }))
+})
 
 const open = ref(false)
 const wrapEl = ref<HTMLElement | null>(null)

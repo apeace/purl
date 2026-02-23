@@ -57,7 +57,78 @@
 
       <nav class="sidebar-nav">
         <RouterLink
-          v-for="item in mainNav"
+          v-for="item in navBefore"
+          :key="item.path"
+          :to="item.path"
+          class="nav-item"
+          active-class="nav-item--active"
+          @click="onNavClick(item.path)"
+        >
+          <component :is="item.icon" :size="18" class="nav-icon" />
+          <span class="nav-label">{{ item.label }}</span>
+        </RouterLink>
+
+        <!-- Kanban expandable group -->
+        <div class="kanban-group">
+          <RouterLink
+            to="/kanban"
+            class="nav-item kanban-nav-item"
+            :class="{ 'nav-item--active': isKanbanRoute }"
+            @click="onNavClick('/kanban')"
+          >
+            <Workflow :size="18" class="nav-icon" />
+            <span class="nav-label">Kanban</span>
+            <span
+              role="button"
+              class="kanban-add-btn"
+              @click.prevent.stop="showCreateModal = true"
+            >
+              <Plus :size="14" />
+            </span>
+          </RouterLink>
+          <div v-if="isKanbanRoute && !collapsed" class="kanban-subnav">
+            <RouterLink
+              to="/kanban"
+              class="subnav-item"
+              :class="{ 'subnav-item--active': route.path === '/kanban' }"
+              @click="onNavClick('/kanban')"
+            >
+              <span class="subnav-dot" style="background: #60a5fa" />
+              <span>Service Flow</span>
+            </RouterLink>
+            <RouterLink
+              v-for="board in boards"
+              :key="board.id"
+              :to="`/kanban/${board.id}`"
+              class="subnav-item"
+              :class="{ 'subnav-item--active': route.params.boardId === board.id }"
+              @click="onNavClick(`/kanban/${board.id}`)"
+              @contextmenu.prevent="openContextMenu($event, board.id)"
+              @dragover.prevent="onBoardDragOver($event, board.id)"
+              @dragleave="onBoardDragLeave(board.id)"
+              @drop="onBoardDrop($event, board.id)"
+            >
+              <template v-if="renamingBoardId === board.id">
+                <input
+                  ref="renameInputRef"
+                  v-model="renameValue"
+                  class="subnav-rename-input"
+                  @blur="commitRename"
+                  @keydown.enter="commitRename"
+                  @keydown.escape="cancelRename"
+                  @click.prevent.stop
+                />
+              </template>
+              <template v-else>
+                <span class="subnav-dot" :style="{ background: board.stages[0]?.color ?? '#94a3b8' }" />
+                <span class="subnav-label" :class="{ 'subnav-label--dragover': dragOverBoardId === board.id }">{{ board.name }}</span>
+              </template>
+            </RouterLink>
+          </div>
+        </div>
+
+        <RouterLink
+          v-for="item in navAfter"
           :key="item.path"
           :to="item.path"
           class="nav-item"
@@ -129,22 +200,53 @@
         <RouterView :key="navResetKey" />
       </div>
     </main>
+    <CreateBoardModal
+      :visible="showCreateModal"
+      @close="showCreateModal = false"
+      @created="onBoardCreated"
+    />
+
+    <StagePickerModal
+      :visible="showStagePicker"
+      :board-name="stagePickerBoard?.name ?? ''"
+      :stages="stagePickerBoard?.stages ?? []"
+      @close="closeStagePicker"
+      @pick="onStagePicked"
+    />
+
+    <BoardContextMenu
+      :visible="ctxMenuVisible"
+      :x="ctxMenuX"
+      :y="ctxMenuY"
+      @close="ctxMenuVisible = false"
+      @rename="startRename"
+      @delete="handleDeleteBoard"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
+import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Plus, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
+import BoardContextMenu from "../components/BoardContextMenu.vue"
+import CreateBoardModal from "../components/CreateBoardModal.vue"
+import StagePickerModal from "../components/StagePickerModal.vue"
+import { useKanbanBoards } from "../composables/useKanbanBoards"
+import type { BoardStage } from "../composables/useKanbanBoards"
 
 const open = ref(false)
 const collapsed = ref(false)
 const cmdOpen = ref(false)
 const cmdInput = ref<HTMLInputElement | null>(null)
 
-const mainNav = [
+const { addCardToBoard, boards, deleteBoard, renameBoard } = useKanbanBoards()
+
+const navBefore = [
   { path: "/go", label: "Go", icon: Zap },
-  { path: "/kanban", label: "Kanban", icon: Workflow },
+]
+
+const navAfter = [
   { path: "/inbox", label: "Inbox", icon: Inbox },
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { path: "/reporting", label: "Reporting", icon: BarChart3 },
@@ -158,6 +260,111 @@ const cmdItems = [
 ]
 
 const route = useRoute()
+const router = useRouter()
+
+// ── Kanban sidebar state ────────────────────────────────
+const showCreateModal = ref(false)
+const isKanbanRoute = computed(() => route.path.startsWith("/kanban"))
+
+// Board creation
+function onBoardCreated(boardId: string) {
+  showCreateModal.value = false
+  router.push(`/kanban/${boardId}`)
+}
+
+// Context menu
+const ctxMenuVisible = ref(false)
+const ctxMenuX = ref(0)
+const ctxMenuY = ref(0)
+const ctxBoardId = ref<string | null>(null)
+
+function openContextMenu(e: MouseEvent, boardId: string) {
+  ctxBoardId.value = boardId
+  ctxMenuX.value = e.clientX
+  ctxMenuY.value = e.clientY
+  ctxMenuVisible.value = true
+}
+
+function handleDeleteBoard() {
+  ctxMenuVisible.value = false
+  if (!ctxBoardId.value) return
+  const wasViewing = route.params.boardId === ctxBoardId.value
+  deleteBoard(ctxBoardId.value)
+  if (wasViewing) router.push("/kanban")
+}
+
+// Inline rename
+const renamingBoardId = ref<string | null>(null)
+const renameValue = ref("")
+const renameInputRef = ref<HTMLInputElement[] | null>(null)
+
+function startRename() {
+  ctxMenuVisible.value = false
+  if (!ctxBoardId.value) return
+  const board = boards.value.find((b) => b.id === ctxBoardId.value)
+  if (!board) return
+  renamingBoardId.value = ctxBoardId.value
+  renameValue.value = board.name
+  nextTick(() => {
+    const inputs = renameInputRef.value
+    if (inputs && inputs.length) {
+      inputs[0].focus()
+      inputs[0].select()
+    }
+  })
+}
+
+function commitRename() {
+  if (renamingBoardId.value && renameValue.value.trim()) {
+    renameBoard(renamingBoardId.value, renameValue.value.trim())
+  }
+  renamingBoardId.value = null
+}
+
+function cancelRename() {
+  renamingBoardId.value = null
+}
+
+// Drag-to-board (stage picker)
+const showStagePicker = ref(false)
+const stagePickerBoard = ref<{ name: string; stages: BoardStage[] } | null>(null)
+const stagePickerBoardId = ref<string | null>(null)
+const stagePickerTicketId = ref<string | null>(null)
+const dragOverBoardId = ref<string | null>(null)
+
+function onBoardDragOver(_e: DragEvent, boardId: string) {
+  dragOverBoardId.value = boardId
+}
+
+function onBoardDragLeave(boardId: string) {
+  if (dragOverBoardId.value === boardId) dragOverBoardId.value = null
+}
+
+function onBoardDrop(e: DragEvent, boardId: string) {
+  dragOverBoardId.value = null
+  const ticketId = e.dataTransfer?.getData("text/plain")
+  if (!ticketId) return
+  const board = boards.value.find((b) => b.id === boardId)
+  if (!board) return
+  stagePickerBoardId.value = boardId
+  stagePickerTicketId.value = ticketId
+  stagePickerBoard.value = { name: board.name, stages: board.stages }
+  showStagePicker.value = true
+}
+
+function onStagePicked(stageId: string) {
+  if (stagePickerBoardId.value && stagePickerTicketId.value) {
+    addCardToBoard(stagePickerBoardId.value, stagePickerTicketId.value, stageId)
+  }
+  closeStagePicker()
+}
+
+function closeStagePicker() {
+  showStagePicker.value = false
+  stagePickerBoard.value = null
+  stagePickerBoardId.value = null
+  stagePickerTicketId.value = null
+}
 
 const navResetKey = ref(0)
 
@@ -520,6 +727,104 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   flex: 1;
 }
 
+/* ---- Kanban group ---- */
+
+.kanban-group {
+  margin-bottom: 2px;
+}
+
+.kanban-add-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.35);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: background 0.15s, color 0.15s;
+}
+
+.kanban-add-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+/* Show on hover */
+.kanban-nav-item:hover .kanban-add-btn {
+  display: flex;
+}
+
+/* Show when kanban is active */
+.kanban-nav-item.nav-item--active .kanban-add-btn {
+  display: flex;
+}
+
+.kanban-subnav {
+  padding: 2px 0 4px 20px;
+}
+
+.subnav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+
+.subnav-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+}
+
+.subnav-item--active {
+  background: rgba(99, 102, 241, 0.1);
+  color: #c7d2fe;
+}
+
+.subnav-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.subnav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+
+.subnav-label--dragover {
+  color: #a5b4fc;
+}
+
+.subnav-rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
 /* ---- Sidebar footer ---- */
 
 .sidebar-footer {
@@ -767,6 +1072,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
     transform: translateX(-50%);
     width: 60%;
     height: 3px;
+  }
+
+  .sidebar--collapsed .kanban-subnav {
+    display: none;
+  }
+
+  .sidebar--collapsed .kanban-add-btn {
+    display: none !important;
   }
 
   .sidebar--collapsed .sidebar-footer {

@@ -2,7 +2,7 @@
   <div class="kanban-page">
     <template v-if="!selectedTicketId">
     <div class="kanban-header">
-      <h1 class="page-title">Kanban</h1>
+      <h1 class="page-title">{{ pageTitle }}</h1>
       <div class="header-controls">
         <div class="kanban-search">
           <Search :size="14" class="kanban-search-icon" />
@@ -15,13 +15,13 @@
             <X :size="12" />
           </button>
         </div>
-        <FilterPanel />
+        <FilterPanel :custom-stages="isCustomBoard && currentBoard ? currentBoard.stages : undefined" />
       </div>
     </div>
     <div class="stages-scroll">
       <KanbanStage
         v-for="(stage, i) in stages"
-        :key="stage.title"
+        :key="stage.status"
         v-bind="stage"
         :dragging-id="draggingId"
         :delay="150 + i * 100"
@@ -52,7 +52,7 @@
               </button>
             </div>
           </div>
-          <TicketDetail :ticket-id="selectedTicketId" @resolve="handleResolve" />
+          <TicketDetail :ticket-id="selectedTicketId" show-add-to-board @resolve="handleResolve" @add-to-board="handleAddToBoard" />
         </div>
       </div>
       <div class="queue-panel">
@@ -87,30 +87,86 @@
         </div>
       </div>
     </div>
+
+    <!-- Board picker for "Add to Board" flow -->
+    <Transition name="picker-fade">
+      <div v-if="showBoardPicker" class="picker-backdrop" @click.self="closeBoardPicker">
+        <div class="picker-panel">
+          <div class="picker-header">
+            <h3 class="picker-title">Add to Board</h3>
+            <button class="picker-close" @click="closeBoardPicker">
+              <X :size="14" />
+            </button>
+          </div>
+          <div class="picker-subtitle">Choose a board</div>
+          <div class="picker-list">
+            <button
+              v-for="board in availableBoards"
+              :key="board.id"
+              class="picker-option"
+              @click="pickBoard(board.id)"
+            >
+              <span class="picker-dot" :style="{ background: board.stages[0]?.color ?? '#94a3b8' }" />
+              <span class="picker-name">{{ board.name }}</span>
+            </button>
+            <div v-if="!availableBoards.length" class="picker-empty">No custom boards yet</div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <StagePickerModal
+      :visible="showStagePicker"
+      :board-name="stagePickerBoardName"
+      :stages="stagePickerStages"
+      @close="closeStagePicker"
+      @pick="onStagePicked"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { useRoute } from "vue-router"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
+import StagePickerModal from "../components/StagePickerModal.vue"
 import TicketDetail from "../components/TicketDetail.vue"
+import { useKanbanBoards } from "../composables/useKanbanBoards"
+import type { BoardStage } from "../composables/useKanbanBoards"
 import { useTickets } from "../composables/useTickets"
 import { STATUS_COLORS } from "../utils/colors"
 
-const { filteredTickets, resolveTicket, setStatus } = useTickets()
+const route = useRoute()
+const { addCardToBoard, boards, getBoardById, moveCard } = useKanbanBoards()
+const { filterAssignees, filterKeyword, filterPriorities, filterStatuses, filteredTickets, resolveTicket, setStatus, tickets } = useTickets()
 
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)
 const searchQuery = ref("")
 
-function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
-  draggingId.value = null
-  setStatus(ticketId, status)
-}
+// ── Board awareness ──────────────────────────────────────
 
-const stageDefs = [
+const boardId = computed(() => (route.params.boardId as string) ?? null)
+const isCustomBoard = computed(() => !!boardId.value)
+const currentBoard = computed(() => boardId.value ? getBoardById(boardId.value) : null)
+
+const pageTitle = computed(() => {
+  if (isCustomBoard.value && currentBoard.value) return currentBoard.value.name
+  return "Kanban"
+})
+
+// Reset state on board switch
+watch(boardId, () => {
+  selectedTicketId.value = null
+  searchQuery.value = ""
+  filterStatuses.clear()
+})
+
+// ── Service Flow stage definitions ───────────────────────
+
+const serviceFlowDefs = [
   { status: "new", title: "New", color: STATUS_COLORS.new },
   { status: "open", title: "Open", color: STATUS_COLORS.open },
   { status: "pending", title: "Pending", color: STATUS_COLORS.pending },
@@ -119,19 +175,73 @@ const stageDefs = [
   { status: "closed", title: "Closed", color: STATUS_COLORS.closed },
 ]
 
+// ── Stage definitions (computed based on board) ──────────
+
+const stageDefs = computed(() => {
+  if (isCustomBoard.value && currentBoard.value) {
+    return currentBoard.value.stages.map((s) => ({
+      status: s.id,
+      title: s.name,
+      color: s.color,
+    }))
+  }
+  return serviceFlowDefs
+})
+
+// ── Search helper ────────────────────────────────────────
+
+function matchesSearch(t: { name: string; company: string; subject: string; messages: { text: string }[] }, q: string): boolean {
+  if (!q) return true
+  const desc = t.messages[0]?.text ?? ""
+  return t.name.toLowerCase().includes(q)
+    || t.company.toLowerCase().includes(q)
+    || t.subject.toLowerCase().includes(q)
+    || desc.toLowerCase().includes(q)
+}
+
+// ── Stages computed ──────────────────────────────────────
+
 const stages = computed(() => {
   const q = searchQuery.value.trim().toLowerCase()
-  return stageDefs.map((def) => {
+
+  if (isCustomBoard.value && currentBoard.value) {
+    const board = currentBoard.value
+    // When stage filters are active, only show matching stages
+    const stageFilter = filterStatuses.size > 0
+    return stageDefs.value
+      .filter((def) => !stageFilter || filterStatuses.has(def.status))
+      .map((def) => {
+      const assignedIds = Object.entries(board.cardAssignments)
+        .filter(([, stageId]) => stageId === def.status)
+        .map(([ticketId]) => ticketId)
+      let items = tickets.value.filter((t) => assignedIds.includes(t.id))
+      // Apply shared filters (keyword, priority, assignee)
+      const kw = filterKeyword.value.trim().toLowerCase()
+      if (kw) items = items.filter((t) => t.subject.toLowerCase().includes(kw) || (t.messages[0]?.text ?? "").toLowerCase().includes(kw))
+      if (filterPriorities.size) items = items.filter((t) => filterPriorities.has(t.priority))
+      if (filterAssignees.size) items = items.filter((t) => filterAssignees.has(t.assignee))
+      if (q) items = items.filter((t) => matchesSearch(t, q))
+      return {
+        title: def.title,
+        count: items.length,
+        color: def.color,
+        status: def.status,
+        items: items.map((t) => ({
+          id: t.id,
+          name: t.name,
+          company: t.company,
+          subject: t.subject,
+          priority: t.priority,
+          avatarColor: t.avatarColor,
+        })),
+      }
+    })
+  }
+
+  // Service Flow: filter by ticket status
+  return stageDefs.value.map((def) => {
     let items = filteredTickets.value.filter((t) => t.status === def.status)
-    if (q) {
-      items = items.filter((t) => {
-        const desc = t.messages[0]?.text ?? ""
-        return t.name.toLowerCase().includes(q)
-          || t.company.toLowerCase().includes(q)
-          || t.subject.toLowerCase().includes(q)
-          || desc.toLowerCase().includes(q)
-      })
-    }
+    if (q) items = items.filter((t) => matchesSearch(t, q))
     return {
       title: def.title,
       count: items.length,
@@ -149,30 +259,51 @@ const stages = computed(() => {
   })
 })
 
+// ── Drop handler ─────────────────────────────────────────
+
+function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
+  draggingId.value = null
+  if (isCustomBoard.value && boardId.value) {
+    moveCard(boardId.value, ticketId, status)
+  } else {
+    setStatus(ticketId, status)
+  }
+}
+
 // ── Split view state ─────────────────────────────────────
 
 const selectedStage = computed(() => {
   if (!selectedTicketId.value) return null
+  if (isCustomBoard.value && currentBoard.value) {
+    const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
+    const def = stageDefs.value.find((s) => s.status === stageId)
+    return def ? { title: def.title, color: def.color } : null
+  }
   const ticket = filteredTickets.value.find((t) => t.id === selectedTicketId.value)
   if (!ticket) return null
-  return stageDefs.find((s) => s.status === ticket.status) ?? null
+  const def = serviceFlowDefs.find((s) => s.status === ticket.status)
+  return def ? { title: def.title, color: def.color } : null
 })
 
 const stageQueue = computed(() => {
   if (!selectedTicketId.value) return []
+  const q = searchQuery.value.trim().toLowerCase()
+
+  if (isCustomBoard.value && currentBoard.value) {
+    const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
+    if (!stageId) return []
+    const assignedIds = Object.entries(currentBoard.value.cardAssignments)
+      .filter(([, sid]) => sid === stageId)
+      .map(([tid]) => tid)
+    let items = tickets.value.filter((t) => assignedIds.includes(t.id))
+    if (q) items = items.filter((t) => matchesSearch(t, q))
+    return items
+  }
+
   const ticket = filteredTickets.value.find((t) => t.id === selectedTicketId.value)
   if (!ticket) return []
-  const q = searchQuery.value.trim().toLowerCase()
   let items = filteredTickets.value.filter((t) => t.status === ticket.status)
-  if (q) {
-    items = items.filter((t) => {
-      const desc = t.messages[0]?.text ?? ""
-      return t.name.toLowerCase().includes(q)
-        || t.company.toLowerCase().includes(q)
-        || t.subject.toLowerCase().includes(q)
-        || desc.toLowerCase().includes(q)
-    })
-  }
+  if (q) items = items.filter((t) => matchesSearch(t, q))
   return items
 })
 
@@ -194,6 +325,55 @@ function handleResolve() {
   resolveTicket(selectedTicketId.value!)
   selectedTicketId.value = next ? next.id : null
 }
+
+// ── "Add to Board" flow ──────────────────────────────────
+
+const showBoardPicker = ref(false)
+const addToBoardTicketId = ref<string | null>(null)
+const showStagePicker = ref(false)
+const stagePickerBoardName = ref("")
+const stagePickerStages = ref<BoardStage[]>([])
+const stagePickerBoardId = ref<string | null>(null)
+
+const availableBoards = computed(() => boards.value)
+
+function handleAddToBoard(ticketId: string) {
+  addToBoardTicketId.value = ticketId
+  if (boards.value.length === 0) return
+  showBoardPicker.value = true
+}
+
+function closeBoardPicker() {
+  showBoardPicker.value = false
+  addToBoardTicketId.value = null
+}
+
+function pickBoard(pickedBoardId: string) {
+  showBoardPicker.value = false
+  const board = getBoardById(pickedBoardId)
+  if (!board) return
+  stagePickerBoardId.value = pickedBoardId
+  stagePickerBoardName.value = board.name
+  stagePickerStages.value = board.stages
+  showStagePicker.value = true
+}
+
+function onStagePicked(stageId: string) {
+  if (stagePickerBoardId.value && addToBoardTicketId.value) {
+    addCardToBoard(stagePickerBoardId.value, addToBoardTicketId.value, stageId)
+  }
+  closeStagePicker()
+}
+
+function closeStagePicker() {
+  showStagePicker.value = false
+  stagePickerBoardId.value = null
+  stagePickerBoardName.value = ""
+  stagePickerStages.value = []
+  addToBoardTicketId.value = null
+}
+
+// ── Keyboard ─────────────────────────────────────────────
 
 function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape" && selectedTicketId.value) {
@@ -531,6 +711,131 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
 .qcard-priority--low {
   background: rgba(52, 211, 153, 0.1);
   color: #6ee7b7;
+}
+
+/* ── Board / Stage picker (inline in KanbanPage) ─────────── */
+
+.picker-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.picker-panel {
+  width: 100%;
+  max-width: 300px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+  animation: pickerUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pickerUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+}
+
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 0;
+}
+
+.picker-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  margin: 0;
+}
+
+.picker-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.picker-close:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.picker-subtitle {
+  font-size: 12px;
+  color: rgba(148, 163, 184, 0.4);
+  padding: 4px 16px 10px;
+}
+
+.picker-list {
+  padding: 0 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.picker-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.picker-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.picker-name {
+  flex: 1;
+}
+
+.picker-empty {
+  font-size: 13px;
+  color: rgba(148, 163, 184, 0.35);
+  padding: 12px;
+  text-align: center;
+}
+
+.picker-fade-enter-active,
+.picker-fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.picker-fade-enter-from,
+.picker-fade-leave-to {
+  opacity: 0;
 }
 
 /* ── Intermediate screens ────────────────────────────────── */
