@@ -1,5 +1,5 @@
 <template>
-  <div class="go-page">
+  <div class="go-page" :class="{ 'go-page--lobby': !activeThread }">
     <div class="go-split">
 
       <!-- ── Left: AI Workspace (always present) ─────────── -->
@@ -7,6 +7,27 @@
 
         <!-- Lobby: AI guides you to a task -->
         <div v-if="!activeThread" class="workspace-lobby">
+          <!-- Mobile-only: HUD + health at top of lobby -->
+          <div class="mobile-lobby-hud">
+            <div class="hud">
+              <div class="hud-stat">
+                <span class="hud-value">{{ hudOpen }}</span>
+                <span class="hud-label">open</span>
+              </div>
+              <div class="hud-divider" />
+              <div class="hud-stat">
+                <span class="hud-value">{{ hudLongestWait }}</span>
+                <span class="hud-label">longest wait</span>
+              </div>
+              <div class="hud-divider" />
+              <div class="hud-stat">
+                <span class="hud-value">{{ hudResolvedToday }}</span>
+                <span class="hud-label">resolved today</span>
+              </div>
+            </div>
+            <ShiftHealth />
+          </div>
+
           <div class="lobby-content">
             <div class="ai-lobby-icon">
               <Sparkles :size="28" />
@@ -130,7 +151,7 @@
 
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import type { Ticket } from "../composables/useTickets"
@@ -141,14 +162,11 @@ const {
   hudLongestWait,
   hudOpen,
   hudResolvedToday,
-  loadTickets,
   openTickets: threads,
   parseWait,
   resolveTicket,
   resolvedToday,
 } = useTickets()
-
-onMounted(() => loadTickets())
 
 const DAILY_GOAL = 20
 
@@ -605,9 +623,10 @@ watch(activeId, (val) => {
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 18px 20px;
+  padding: 14px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+  min-width: 0;
 }
 
 .hud-stat {
@@ -615,29 +634,38 @@ watch(activeId, (val) => {
   flex-direction: column;
   align-items: center;
   flex: 1;
-  gap: 3px;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 4px;
 }
 
 .hud-value {
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 700;
   color: #f1f5f9;
   letter-spacing: -0.02em;
   line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .hud-label {
-  font-size: 12px;
+  font-size: 11px;
   color: rgba(148, 163, 184, 0.45);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-weight: 500;
+  text-align: center;
+  line-height: 1.3;
 }
 
 .hud-divider {
   width: 1px;
-  height: 28px;
+  height: 24px;
   background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
 }
 
 /* ── Queue cards ────────────────────────────────────────── */
@@ -759,6 +787,69 @@ watch(activeId, (val) => {
   color: #6ee7b7;
 }
 
+/* ── Intermediate screens (tablets / small laptops) ────── */
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .workspace {
+    flex: 6;
+  }
+
+  .queue-panel {
+    flex: 4;
+  }
+
+  .priority-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .priority-card {
+    padding: 16px 20px;
+  }
+
+  .priority-label {
+    font-size: 18px;
+  }
+
+  .priority-stat-value {
+    font-size: 15px;
+  }
+
+  .priority-stat-detail {
+    font-size: 13px;
+  }
+}
+
+/* ── Large screens — restore generous sizing ───────────── */
+
+@media (min-width: 1200px) {
+  .hud {
+    padding: 18px 20px;
+  }
+
+  .hud-stat {
+    gap: 3px;
+    padding: 0 6px;
+  }
+
+  .hud-value {
+    font-size: 24px;
+  }
+
+  .hud-label {
+    font-size: 12px;
+  }
+
+  .hud-divider {
+    height: 28px;
+  }
+}
+
+/* ── Mobile lobby HUD (hidden on desktop) ──────────────── */
+
+.mobile-lobby-hud {
+  display: none;
+}
+
 /* ── Mobile ─────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
@@ -778,18 +869,83 @@ watch(activeId, (val) => {
   }
 
   .workspace-lobby {
-    min-height: 50dvh;
+    min-height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  /* Show the inline HUD at top of lobby */
+  .mobile-lobby-hud {
+    display: block;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  /* Hide queue panel when in lobby */
+  .go-page--lobby .queue-panel {
+    display: none;
   }
 
   .lobby-content {
-    padding: 24px 20px;
+    padding: 16px 16px 20px;
   }
 
+  .ai-lobby-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    margin-bottom: 12px;
+  }
+
+  /* Compact 2×2 tile grid */
   .priority-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
   }
 
+  .priority-card {
+    padding: 14px 16px;
+    border-radius: 14px;
+  }
+
+  .priority-icon {
+    width: 24px;
+    height: 24px;
+    margin-bottom: 6px;
+  }
+
+  .priority-label {
+    font-size: 15px;
+    margin-bottom: 2px;
+  }
+
+  .priority-stats {
+    margin-bottom: 0;
+  }
+
+  .priority-stat-value {
+    font-size: 13px;
+  }
+
+  .priority-stat-detail {
+    font-size: 11px;
+  }
+
+  .priority-rec-badge {
+    top: 8px;
+    right: 10px;
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+
+  /* Hide previews on mobile lobby */
+  .priority-preview {
+    display: none;
+  }
+
+  /* Queue panel visible in active state */
   .queue-panel {
+    min-width: 0;
     max-height: 60dvh;
   }
 }

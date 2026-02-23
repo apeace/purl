@@ -1283,6 +1283,30 @@ function refresh() {
   color: #6ee7b7;
 }
 
+/* ── Intermediate screens ────────────────────────────────── */
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .row-sender {
+    width: 130px;
+  }
+
+  .row-labels {
+    display: none;
+  }
+
+  .workspace {
+    flex: 6;
+  }
+
+  .queue-panel {
+    flex: 4;
+  }
+
+  .strategy-header-label {
+    font-size: 15px;
+  }
+}
+
 /* ── Mobile ──────────────────────────────────────────────── */
 
 @media (max-width: 767px) {
@@ -1322,6 +1346,7 @@ function refresh() {
   }
 
   .queue-panel {
+    min-width: 0;
     max-height: 60dvh;
   }
 }

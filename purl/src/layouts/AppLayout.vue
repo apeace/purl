@@ -102,10 +102,7 @@
       </div>
       <div class="mobile-header-right">
         <button class="icon-btn" @click="openCmd"><Search :size="16" /></button>
-        <button class="icon-btn notif-btn">
-          <Bell :size="18" />
-          <span class="notif-dot" />
-        </button>
+        <div class="user-avatar user-avatar--sm">A</div>
       </div>
     </header>
 
@@ -124,10 +121,6 @@
             <span>Search…</span>
             <kbd>⌘K</kbd>
           </button>
-          <button class="icon-btn notif-btn">
-            <Bell :size="18" />
-            <span class="notif-dot notif-dot--sm" />
-          </button>
           <div class="user-avatar user-avatar--sm">A</div>
         </div>
       </div>
@@ -140,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { BarChart3, Bell, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
+import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 
@@ -326,6 +319,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   overflow: hidden;
   transform: translateX(-100%);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar--open {
+  transform: translateX(0);
 }
 
 .glow-orb {
@@ -602,27 +599,6 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   gap: 8px;
 }
 
-.notif-btn {
-  position: relative;
-}
-
-.notif-dot {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #ef4444;
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.5);
-}
-
-.notif-dot--sm {
-  width: 6px;
-  height: 6px;
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
-}
-
 /* ---- Main content ---- */
 
 .main-content {
@@ -820,6 +796,26 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
 
   .page-wrap {
     padding: 28px;
+  }
+}
+
+/* ---- Intermediate: narrower sidebar ---- */
+
+@media (min-width: 768px) and (max-width: 1099px) {
+  .sidebar:not(.sidebar--collapsed) {
+    width: 200px;
+  }
+
+  .sidebar:not(.sidebar--collapsed) .sidebar-search-btn kbd {
+    display: none;
+  }
+
+  .main-content:not(.main-content--collapsed) {
+    margin-left: 200px;
+  }
+
+  .page-wrap {
+    padding: 20px;
   }
 }
 </style>
