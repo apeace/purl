@@ -10,61 +10,72 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-var users = []struct{ email, name string }{
-	{"alice@example.com", "Alice Chen"},
-	{"bob@example.com", "Bob Harris"},
-	{"carol@example.com", "Carol Singh"},
-	{"dan@example.com", "Dan Okafor"},
-	{"eve@example.com", "Eve Nakamura"},
-	{"frank@example.com", "Frank Torres"},
-	{"grace@example.com", "Grace Müller"},
-	{"henry@example.com", "Henry Park"},
-	{"isla@example.com", "Isla Rivera"},
-	{"james@example.com", "James Kowalski"},
+var customerData = []struct {
+	name   string
+	emails []string
+	phones []string
+}{
+	{"Alice Chen", []string{"alice@example.com"}, []string{"555-0101"}},
+	{"Bob Harris", []string{"bob@example.com", "bobby.h@gmail.com"}, []string{"555-0102"}},
+	{"Carol Singh", []string{"carol@example.com"}, []string{"555-0103", "555-0203"}},
+	{"Dan Okafor", []string{"dan@example.com", "dan.o@work.com"}, []string{"555-0104"}},
+	{"Eve Nakamura", []string{"eve@example.com"}, []string{"555-0105"}},
+	{"Frank Torres", []string{"frank@example.com"}, []string{"555-0106", "555-0206"}},
+	{"Grace Müller", []string{"grace@example.com"}, []string{"555-0107"}},
+	{"Henry Park", []string{"henry@example.com"}, []string{"555-0108"}},
+	{"Isla Rivera", []string{"isla@example.com", "isla.r@gmail.com"}, []string{"555-0109"}},
+	{"James Kowalski", []string{"james@example.com"}, []string{"555-0110"}},
+}
+
+var agentData = []struct{ email, name string }{
+	{"sarah.support@brightwave.com", "Sarah Mitchell"},
+	{"tom.tech@brightwave.com", "Tom Bradley"},
+	{"lisa.billing@brightwave.com", "Lisa Nguyen"},
+	{"mike.network@brightwave.com", "Mike Osei"},
 }
 
 var titles = []string{
-	"Login page throws 500 on bad password",
-	"Dashboard fails to load for new accounts",
-	"Email notifications not sent after ticket close",
-	"Search returns stale results",
-	"Attachment upload silently fails over 5 MB",
-	"Password reset link expires too quickly",
-	"Dark mode flickers on page load",
-	"CSV export includes deleted records",
-	"Sorting by priority broken on mobile",
-	"Session expires mid-form and loses data",
-	"API rate limit not documented",
-	"Duplicate tickets can be created via rapid clicks",
-	"Pagination skips a page at record boundary",
-	"Assignee field resets on ticket reopen",
-	"Webhook payload missing ticket URL",
-	"Add bulk status update action",
-	"Support markdown in ticket descriptions",
-	"Allow filtering by multiple assignees",
-	"Add keyboard shortcut to create ticket",
-	"Show time-in-status on ticket detail",
-	"Integrate Slack notifications",
-	"Add due date field to tickets",
-	"Display reporter avatar in list view",
-	"Allow ticket templates",
-	"Export tickets to PDF",
-	"Improve error messages on form validation",
-	"Add two-factor authentication",
-	"Remember table column widths per user",
-	"Mobile: tap target too small on ticket row",
-	"Tooltip overlaps dropdown on small screens",
+	"Internet speed much slower than advertised",
+	"No internet connection since yesterday evening",
+	"Wi-Fi dropping every few hours",
+	"Router keeps rebooting on its own",
+	"Billed twice for the same month",
+	"Charged for equipment I already returned",
+	"Promotional rate not applied to my account",
+	"Can't complete plan upgrade online — page errors",
+	"Downgrade request ignored after 2 weeks",
+	"Service outage with no status update from provider",
+	"Technician missed scheduled appointment",
+	"Upload speeds fine but download is throttled",
+	"Latency spikes during peak evening hours",
+	"Static IP address keeps changing",
+	"Modem not recognized after firmware update",
+	"New customer discount not reflected on bill",
+	"Contract cancellation fee charged incorrectly",
+	"Auto-pay failed but no notification sent",
+	"Bundle discount removed without notice",
+	"Data cap overage charge on unlimited plan",
+	"IPv6 not working after plan switch",
+	"DNS resolution intermittently failing",
+	"Packet loss on wired connection",
+	"Service outage affecting entire neighborhood",
+	"Speed test shows 10 Mbps on 500 Mbps plan",
+	"Unable to reach support — hold times over 2 hours",
+	"Upgrade to gigabit plan not activated after payment",
+	"Parental controls reset after router reboot",
+	"Wrong equipment sent for self-install",
+	"Final bill sent after cancellation is incorrect",
 }
 
 var descriptions = []string{
-	"Steps to reproduce are attached. Happens consistently in production.",
-	"Reported by multiple users. Likely related to the recent deploy.",
-	"Intermittent — hard to reproduce locally but reliable in staging.",
-	"Blocked by this issue. Needs fix before the next release.",
-	"Low priority but affects a notable number of users per analytics.",
-	"Quick win — the fix should be straightforward.",
-	"Needs design review before implementation.",
-	"Regression introduced in v2.3. Was working before.",
+	"Started experiencing this issue two days ago. No changes on my end.",
+	"Called in previously but the problem came back after a few hours.",
+	"Affecting multiple devices — ruled out the router as the cause.",
+	"Speed test results attached. Consistently well below the plan rate.",
+	"This has been an ongoing problem for over a week with no resolution.",
+	"Issue appears to be isolated to evenings between 7–10 PM.",
+	"Already rebooted the modem and router multiple times. No improvement.",
+	"Bill shows a charge that was not on the previous month's statement.",
 }
 
 // Weighted toward open/in_progress to reflect a realistic backlog.
@@ -83,22 +94,30 @@ var priorities = []string{
 	"urgent",
 }
 
-var commentBodies = []string{
-	"I can reproduce this consistently on Chrome 122.",
-	"Tried the workaround mentioned above — no luck.",
-	"This is blocking us. Bumping priority.",
-	"Fix looks good in staging. Ready for review.",
-	"Rolled back the change. Will investigate further.",
-	"Confirmed fixed in the latest build.",
-	"Added a failing test case to the branch.",
-	"Waiting on design feedback before proceeding.",
-	"Is there a workaround we can use in the meantime?",
-	"Related to #42 — might share the same root cause.",
-	"I have a patch ready, will open a PR shortly.",
-	"This also affects the mobile app.",
-	"Closing as duplicate — tracked in the other ticket.",
-	"Left a comment in the code explaining the fix.",
-	"Spoke with the reporter — they can live with this for now.",
+var customerCommentBodies = []string{
+	"Still experiencing this issue. Please advise.",
+	"I rebooted the modem again — no change.",
+	"This is really affecting my work-from-home setup.",
+	"When can I expect this to be resolved?",
+	"I've been a customer for 5 years and never had this problem before.",
+	"The issue came back after your tech left.",
+	"I ran another speed test just now — still well below plan speed.",
+	"Can someone call me back instead? I'm having trouble with the chat.",
+}
+
+var agentCommentBodies = []string{
+	"Confirmed the issue on our end. Escalating to the network team.",
+	"Checked the line diagnostics — seeing elevated signal noise.",
+	"Scheduled a technician visit for the next available slot.",
+	"Customer confirmed the technician resolved the issue on-site.",
+	"Applied a credit for the days of degraded service.",
+	"This appears to be related to the area outage reported yesterday.",
+	"Billing adjustment processed — should reflect on next statement.",
+	"Modem logs reviewed — firmware update is recommended.",
+	"Issue reproduced on our monitoring tools. Ticket forwarded to NOC.",
+	"Customer confirmed service restored after the node replacement.",
+	"Still investigating — provisioning team has been looped in.",
+	"Plan change is now active. Speed increase should be immediate.",
 }
 
 const seedAPIKey = "deadbeef000000000000000000000001cafebabe000000000000000000000002"
@@ -139,37 +158,74 @@ func main() {
 	var orgID string
 	err = db.QueryRow(
 		`INSERT INTO organizations (name, api_key) VALUES ($1, $2) RETURNING id`,
-		"Acme Corp", seedAPIKey,
+		"Brightwave Internet", seedAPIKey,
 	).Scan(&orgID)
 	if err != nil {
 		log.Fatalf("insert org: %v", err)
 	}
 	log.Printf("inserted org (api_key: %s)", seedAPIKey)
 
-	// Users
-	userIDs := make([]string, 0, len(users))
-	for _, u := range users {
+	// Customers
+	customerIDs := make([]string, 0, len(customerData))
+	for _, c := range customerData {
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO users (email, name, org_id) VALUES ($1, $2, $3) RETURNING id`,
-			u.email, u.name, orgID,
+			`INSERT INTO customers (name, org_id) VALUES ($1, $2) RETURNING id`,
+			c.name, orgID,
 		).Scan(&id)
 		if err != nil {
-			log.Fatalf("insert user %s: %v", u.email, err)
+			log.Fatalf("insert customer %s: %v", c.name, err)
 		}
-		userIDs = append(userIDs, id)
+		customerIDs = append(customerIDs, id)
+
+		// Emails: first is verified, additional ones are not
+		for i, email := range c.emails {
+			_, err := db.Exec(
+				`INSERT INTO customer_emails (customer_id, email, verified) VALUES ($1, $2, $3)`,
+				id, email, i == 0,
+			)
+			if err != nil {
+				log.Fatalf("insert customer email %s: %v", email, err)
+			}
+		}
+
+		// Phones: first is verified, additional ones are not
+		for i, phone := range c.phones {
+			_, err := db.Exec(
+				`INSERT INTO customer_phones (customer_id, phone, verified) VALUES ($1, $2, $3)`,
+				id, phone, i == 0,
+			)
+			if err != nil {
+				log.Fatalf("insert customer phone %s: %v", phone, err)
+			}
+		}
 	}
-	log.Printf("inserted %d users", len(userIDs))
+	log.Printf("inserted %d customers", len(customerIDs))
+
+	// Agents
+	agentIDs := make([]string, 0, len(agentData))
+	for _, a := range agentData {
+		var id string
+		err := db.QueryRow(
+			`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3) RETURNING id`,
+			a.email, a.name, orgID,
+		).Scan(&id)
+		if err != nil {
+			log.Fatalf("insert agent %s: %v", a.email, err)
+		}
+		agentIDs = append(agentIDs, id)
+	}
+	log.Printf("inserted %d agents", len(agentIDs))
 
 	// Tickets
 	ticketIDs := make([]string, 0, 50)
 	for range 50 {
-		reporterID := userIDs[rand.Intn(len(userIDs))]
+		reporterID := customerIDs[rand.Intn(len(customerIDs))]
 
 		// ~30% of tickets are unassigned
 		var assigneeID *string
 		if rand.Float32() > 0.3 {
-			id := userIDs[rand.Intn(len(userIDs))]
+			id := agentIDs[rand.Intn(len(agentIDs))]
 			assigneeID = &id
 		}
 
@@ -193,15 +249,36 @@ func main() {
 	}
 	log.Printf("inserted %d tickets", len(ticketIDs))
 
-	// Comments: 3–5 per ticket
+	// Comments: 3–5 per ticket, mix of customer and agent authors
 	commentCount := 0
 	for _, ticketID := range ticketIDs {
 		n := 3 + rand.Intn(3)
 		for range n {
-			authorID := userIDs[rand.Intn(len(userIDs))]
+			var customerAuthorID *string
+			var agentAuthorID *string
+			var role string
+
+			if rand.Float32() < 0.4 {
+				// Agent comment
+				id := agentIDs[rand.Intn(len(agentIDs))]
+				agentAuthorID = &id
+				role = "agent"
+			} else {
+				// Customer comment
+				id := customerIDs[rand.Intn(len(customerIDs))]
+				customerAuthorID = &id
+				role = "customer"
+			}
+
+			body := pick(customerCommentBodies)
+			if role == "agent" {
+				body = pick(agentCommentBodies)
+			}
+
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, author_id, body) VALUES ($1, $2, $3)`,
-				ticketID, authorID, pick(commentBodies),
+				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body)
+				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
+				ticketID, customerAuthorID, agentAuthorID, role, body,
 			)
 			if err != nil {
 				log.Fatalf("insert comment: %v", err)

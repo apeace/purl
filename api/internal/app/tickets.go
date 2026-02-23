@@ -27,9 +27,9 @@ type ticketRow struct {
 func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT t.id, t.title, t.description, t.status, t.priority, u.name, t.created_at
+		SELECT t.id, t.title, t.description, t.status, t.priority, c.name, t.created_at
 		FROM tickets t
-		JOIN users u ON u.id = t.reporter_id
+		JOIN customers c ON c.id = t.reporter_id
 		WHERE t.org_id = $1
 		ORDER BY t.created_at DESC
 	`, o.ID)
