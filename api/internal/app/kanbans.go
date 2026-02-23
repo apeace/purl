@@ -451,3 +451,74 @@ func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ticketIDs)
 }
+
+type kanbanTicketRow struct {
+	ColumnID     string    `json:"column_id"`
+	Position     int       `json:"position"`
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Status       string    `json:"status"`
+	Priority     string    `json:"priority"`
+	ReporterName string    `json:"reporter_name"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// @Summary     List tickets on a Kanban board
+// @Description Returns all tickets placed on the board, ordered by column then position.
+// @Description Each row includes column_id and position so the client can reconstruct per-column ordering.
+// @Produce     json
+// @Param       boardID  path      string  true  "Board ID"
+// @Success     200      {array}   kanbanTicketRow
+// @Failure     401      {string}  string  "Unauthorized"
+// @Failure     404      {string}  string  "Not Found"
+// @Security    ApiKeyAuth
+// @Router      /kanbans/{boardID}/tickets [get]
+func (a *App) listKanbanTickets(w http.ResponseWriter, r *http.Request) {
+	boardID := chi.URLParam(r, "boardID")
+	o := orgFromContext(r.Context())
+
+	// Verify the board exists and belongs to this org (readable regardless of is_default)
+	var exists bool
+	err := a.db.QueryRowContext(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM boards WHERE id = $1 AND org_id = $2)`,
+		boardID, o.ID,
+	).Scan(&exists)
+	if err != nil {
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		log.Printf("listKanbanTickets board check: %v", err)
+		return
+	}
+	if !exists {
+		http.Error(w, "board not found", http.StatusNotFound)
+		return
+	}
+
+	rows, err := a.db.QueryContext(r.Context(), `
+		SELECT kbt.column_id, kbt.position, t.id, t.title, t.status, t.priority, c.name, t.created_at
+		FROM kanban_board_tickets kbt
+		JOIN tickets t ON t.id = kbt.ticket_id
+		JOIN customers c ON c.id = t.reporter_id
+		WHERE kbt.board_id = $1
+		ORDER BY kbt.column_id, kbt.position ASC
+	`, boardID)
+	if err != nil {
+		http.Error(w, "query failed", http.StatusInternalServerError)
+		log.Printf("listKanbanTickets query: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	tickets := []kanbanTicketRow{}
+	for rows.Next() {
+		var t kanbanTicketRow
+		if err := rows.Scan(&t.ColumnID, &t.Position, &t.ID, &t.Title, &t.Status, &t.Priority, &t.ReporterName, &t.CreatedAt); err != nil {
+			http.Error(w, "scan failed", http.StatusInternalServerError)
+			log.Printf("listKanbanTickets scan: %v", err)
+			return
+		}
+		tickets = append(tickets, t)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(tickets)
+}
