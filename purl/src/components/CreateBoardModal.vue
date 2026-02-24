@@ -23,7 +23,10 @@
           <div class="stages-list">
             <div
               v-for="(stage, i) in stages"
-              :key="stage.color + i"
+              :key="i"
+              class="stage-wrap"
+            >
+            <div
               class="stage-row"
               :class="{
                 'stage-row--dragging': dragIndex === i,
@@ -43,7 +46,7 @@
               <button
                 class="color-dot"
                 :style="{ background: stage.color }"
-                @click="cycleColor(i)"
+                @click.stop="toggleColorPicker(i)"
               />
               <input
                 v-model="stage.name"
@@ -58,6 +61,10 @@
               >
                 <Minus :size="14" />
               </button>
+            </div>
+            <div v-if="openColorPickerIndex === i" class="stage-color-picker" @click.stop>
+              <ColorPicker :model-value="stage.color" @update:model-value="onStageColorChange(i, $event)" />
+            </div>
             </div>
           </div>
           <button class="add-stage-btn" @click="addStage">
@@ -79,8 +86,9 @@
 
 <script setup lang="ts">
 import { GripVertical, Minus, Plus, X } from "lucide-vue-next"
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
+import ColorPicker, { COLUMN_COLORS } from "./ColorPicker.vue"
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -90,17 +98,12 @@ const emit = defineEmits<{
 
 const { createBoard } = useKanbanStore()
 
-const PALETTE = [
-  "#38bdf8", "#6366f1", "#a855f7", "#ec4899",
-  "#f97316", "#f59e0b", "#34d399", "#60a5fa",
-  "#ef4444", "#14b8a6", "#84cc16", "#94a3b8",
-]
-
 const nameInput = ref<HTMLInputElement | null>(null)
 const boardName = ref("")
 const stages = ref<{ name: string; color: string }[]>([])
 const dragIndex = ref<number | null>(null)
 const dropTarget = ref<number | null>(null)
+const openColorPickerIndex = ref<number | null>(null)
 
 const namePlaceholder = computed(() => {
   const d = new Date()
@@ -112,12 +115,13 @@ const namePlaceholder = computed(() => {
 function resetForm() {
   boardName.value = ""
   stages.value = [
-    { name: "", color: PALETTE[0] },
-    { name: "", color: PALETTE[1] },
-    { name: "", color: PALETTE[2] },
+    { name: "", color: COLUMN_COLORS[0] },
+    { name: "", color: COLUMN_COLORS[1] },
+    { name: "", color: COLUMN_COLORS[2] },
   ]
   dragIndex.value = null
   dropTarget.value = null
+  closeColorPicker()
 }
 
 resetForm()
@@ -158,14 +162,31 @@ function onStageDrop(i: number) {
   dropTarget.value = null
 }
 
-function cycleColor(index: number) {
-  const current = PALETTE.indexOf(stages.value[index].color)
-  stages.value[index].color = PALETTE[(current + 1) % PALETTE.length]
+function closeColorPicker() {
+  openColorPickerIndex.value = null
+  document.removeEventListener("click", closeColorPicker)
 }
+
+function toggleColorPicker(index: number) {
+  if (openColorPickerIndex.value === index) {
+    closeColorPicker()
+  } else {
+    openColorPickerIndex.value = index
+    // nextTick so this same click event doesn't immediately re-close via the listener
+    nextTick(() => document.addEventListener("click", closeColorPicker))
+  }
+}
+
+function onStageColorChange(index: number, color: string) {
+  stages.value[index].color = color
+  closeColorPicker()
+}
+
+onBeforeUnmount(closeColorPicker)
 
 function addStage() {
   const usedColors = new Set(stages.value.map((s) => s.color))
-  const next = PALETTE.find((c) => !usedColors.has(c)) ?? PALETTE[stages.value.length % PALETTE.length]
+  const next = COLUMN_COLORS.find((c) => !usedColors.has(c)) ?? COLUMN_COLORS[stages.value.length % COLUMN_COLORS.length]
   stages.value.push({ name: "", color: next })
 }
 
@@ -281,6 +302,20 @@ async function handleCreate() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.stage-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stage-color-picker {
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  margin-left: 22px;
 }
 
 .stage-row {

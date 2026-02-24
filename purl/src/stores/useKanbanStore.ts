@@ -104,6 +104,73 @@ export const useKanbanStore = defineStore("kanban", () => {
     await patchKanbansByBoardId({ path: { boardID: boardId }, body: { name } })
   }
 
+  async function reorderColumns(boardId: string, newOrder: string[]) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    // Optimistic update
+    board.stages = newOrder.map((id) => board.stages.find((s) => s.id === id)!).filter(Boolean)
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
+  async function renameColumn(boardId: string, columnId: string, name: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    const col = board.stages.find((s) => s.id === columnId)
+    if (col) col.name = name // optimistic update
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
+  async function changeColumnColor(boardId: string, columnId: string, color: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    const col = board.stages.find((s) => s.id === columnId)
+    if (col) col.color = color // optimistic update
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
+  async function addColumn(boardId: string, name: string, color: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    // Optimistic add with a temp ID; replaced once the API returns the real ID
+    const tempId = `temp-${Date.now()}`
+    board.stages.push({ id: tempId, name, color })
+    const { data: columns } = await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({
+        ...(s.id.startsWith("temp-") ? {} : { id: s.id }),
+        name: s.name,
+        color: s.color,
+        position: i,
+      })),
+    })
+    if (columns) {
+      board.stages = columns.map((c) => ({ id: c.id ?? "", name: c.name ?? "", color: c.color ?? "#94a3b8" }))
+    }
+  }
+
+  async function deleteColumn(boardId: string, columnId: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    board.stages = board.stages.filter((s) => s.id !== columnId) // optimistic update
+    // Drop card assignments that belonged to the deleted column
+    for (const ticketId of Object.keys(board.cardAssignments)) {
+      if (board.cardAssignments[ticketId] === columnId) delete board.cardAssignments[ticketId]
+    }
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
   async function addCardToBoard(boardId: string, ticketId: string, stageId: string) {
     const board = boards.value.find((b) => b.id === boardId)
     if (!board) return
@@ -141,12 +208,17 @@ export const useKanbanStore = defineStore("kanban", () => {
 
   return {
     addCardToBoard,
+    addColumn,
     boards,
+    changeColumnColor,
     createBoard,
     deleteBoard,
+    deleteColumn,
     getBoardById,
     loadBoards,
     moveCard,
     renameBoard,
+    renameColumn,
+    reorderColumns,
   }
 })

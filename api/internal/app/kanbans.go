@@ -354,6 +354,20 @@ func (a *App) putKanbanColumns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Shift all remaining column positions out of the final range [0, len(items)-1] so
+	// the per-row updates below never collide with positions that haven't been moved yet.
+	// Shifted positions land in [len(items), 2*len(items)-1], which never overlaps the
+	// target range, making the unique constraint on (board_id, position) safe to satisfy
+	// one row at a time.
+	if _, err := tx.ExecContext(r.Context(),
+		`UPDATE board_columns SET position = position + $1 WHERE board_id = $2`,
+		len(items), boardID,
+	); err != nil {
+		http.Error(w, "write failed", http.StatusInternalServerError)
+		log.Printf("putKanbanColumns shift positions: %v", err)
+		return
+	}
+
 	// Update existing columns and insert new ones, preserving request order
 	for _, item := range items {
 		if item.ID != nil {

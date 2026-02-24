@@ -94,7 +94,6 @@
               class="subnav-item"
               :class="{ 'subnav-item--active': board.isDefault ? route.path === '/kanban' : route.params.boardId === board.id }"
               @click="onNavClick(board.isDefault ? '/kanban' : `/kanban/${board.id}`)"
-              @contextmenu.prevent="!board.isDefault && openContextMenu($event, board.id)"
               @dragover.prevent="onBoardDragOver($event, board.id)"
               @dragleave="onBoardDragLeave(board.id)"
               @drop="onBoardDrop($event, board.id)"
@@ -113,6 +112,13 @@
               <template v-else>
                 <span class="subnav-dot" :style="{ background: board.stages[0]?.color ?? '#94a3b8' }" />
                 <span class="subnav-label" :class="{ 'subnav-label--dragover': dragOverBoardId === board.id }">{{ board.name }}</span>
+                <button
+                  v-if="!board.isDefault"
+                  class="board-menu-btn"
+                  @click.prevent.stop="openContextMenu($event, board.id)"
+                >
+                  <MoreHorizontal :size="13" />
+                </button>
               </template>
             </RouterLink>
           </div>
@@ -213,15 +219,24 @@
       @rename="startRename"
       @delete="handleDeleteBoard"
     />
+
+    <ConfirmModal
+      :visible="confirmDeleteVisible"
+      title="Delete this board?"
+      message="This will permanently remove the board and all its columns. Tickets will not be deleted."
+      @confirm="confirmDeleteBoard"
+      @cancel="cancelDeleteBoard"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Plus, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
+import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, MoreHorizontal, Plus, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import BoardContextMenu from "../components/BoardContextMenu.vue"
+import ConfirmModal from "../components/ConfirmModal.vue"
 import CreateBoardModal from "../components/CreateBoardModal.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
@@ -279,12 +294,25 @@ function openContextMenu(e: MouseEvent, boardId: string) {
   ctxMenuVisible.value = true
 }
 
+const confirmDeleteVisible = ref(false)
+
 function handleDeleteBoard() {
   ctxMenuVisible.value = false
   if (!ctxBoardId.value) return
+  confirmDeleteVisible.value = true
+}
+
+function confirmDeleteBoard() {
+  confirmDeleteVisible.value = false
+  if (!ctxBoardId.value) return
   const wasViewing = route.params.boardId === ctxBoardId.value
   deleteBoard(ctxBoardId.value)
+  ctxBoardId.value = null
   if (wasViewing) router.push("/kanban")
+}
+
+function cancelDeleteBoard() {
+  confirmDeleteVisible.value = false
 }
 
 // Inline rename
@@ -804,6 +832,32 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
 
 .subnav-label--dragover {
   color: #a5b4fc;
+}
+
+.board-menu-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.4);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+
+.board-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.subnav-item:hover .board-menu-btn,
+.subnav-item--active .board-menu-btn {
+  display: flex;
 }
 
 .subnav-rename-input {
