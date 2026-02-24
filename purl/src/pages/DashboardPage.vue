@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <div class="dashboard">
+    <ComingSoon page />
     <div class="page-header">
       <h1 class="page-title">Good {{ greeting }}, Alex</h1>
       <p class="page-subtitle">Here's your support queue overview.</p>
@@ -112,6 +113,7 @@
 import { storeToRefs } from "pinia"
 import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
+import ComingSoon from "../components/ComingSoon.vue"
 import StatCard from "../components/StatCard.vue"
 import { useTicketStore } from "../stores/useTicketStore"
 import { STATUS_COLORS } from "../utils/colors"
@@ -166,6 +168,11 @@ const slaMetrics = [
 </script>
 
 <style scoped>
+.dashboard {
+  position: relative;
+  min-height: 400px;
+}
+
 .page-header {
   margin-bottom: 24px;
 }

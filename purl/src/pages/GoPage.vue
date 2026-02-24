@@ -44,6 +44,7 @@
                 <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
                   <Sparkles :size="10" /> Recommended
                 </div>
+                <ComingSoon v-if="opt.id === 'urgent' || opt.id === 'quick'" />
                 <component :is="opt.icon" :size="36" class="priority-icon" :style="{ color: opt.color }" />
                 <div class="priority-label">{{ opt.label }}</div>
                 <div class="priority-stats">
@@ -149,6 +150,7 @@
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
+import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useAiStore } from "../stores/useAiStore"
@@ -159,7 +161,6 @@ const ticketStore = useTicketStore()
 const {
   hudLongestWait,
   hudOpen,
-  hudResolvedToday,
   openTickets: threads,
   resolvedToday,
 } = storeToRefs(ticketStore)
@@ -167,8 +168,6 @@ const { resolveTicket } = ticketStore
 
 const aiStore = useAiStore()
 const { suggestions: aiSuggestions } = storeToRefs(aiStore)
-
-const DAILY_GOAL = 20
 
 const priorityOptions = [
   { id: "urgent", label: "Urgent first", description: "Tackle high-priority tickets before they escalate", icon: Flame, color: "#f87171" },
@@ -185,6 +184,15 @@ const chosenPriority = ref<string | null>(null)
 const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
 const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
 const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
+
+const queueDetail = computed(() => {
+  const counts: Record<string, number> = {}
+  for (const t of tickets.value) {
+    if (t.status === "new" || t.status === "open") continue
+    counts[t.status] = (counts[t.status] ?? 0) + 1
+  }
+  return Object.entries(counts).map(([s, n]) => `${n} ${statusLabel(s)}`).join(" · ") || "0 resolved"
+})
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
@@ -336,6 +344,7 @@ watch(activeId, (val) => {
 
 .priority-card {
   position: relative;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 20px;
