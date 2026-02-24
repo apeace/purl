@@ -51,6 +51,17 @@ services:
     depends_on:
       - api
 
+  process-zendesk-webhooks:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ../api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: /bin/sh -c "while :; do ./bin/process-zendesk-webhooks; sleep 2; done"
+
   certbot:
     image: certbot/certbot
     restart: unless-stopped
