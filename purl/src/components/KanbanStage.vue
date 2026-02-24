@@ -165,7 +165,7 @@ function onDragStart(event: DragEvent, id: string) {
 }
 
 function onDragOver(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   if (!stageCardsEl.value || !props.draggingId || isSource.value) return
   const slots = stageCardsEl.value.querySelectorAll(".card-slot")
   let index = slots.length
@@ -180,13 +180,13 @@ function onDragOver(event: DragEvent) {
 }
 
 function onDragEnter(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount++
   dragOver.value = true
 }
 
 function onDragLeave(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount--
   if (enterCount <= 0) {
     enterCount = 0
@@ -195,7 +195,7 @@ function onDragLeave(event: DragEvent) {
 }
 
 function onDrop(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount = 0
   dragOver.value = false
   dropIndex.value = -1
