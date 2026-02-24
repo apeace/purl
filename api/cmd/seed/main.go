@@ -168,6 +168,19 @@ func main() {
 	}
 	log.Printf("seeding into org %s (id: %s)", slug, orgID)
 
+	// Wipe existing data. Deleting tickets cascades to comments and kanban_board_tickets.
+	// Deleting customers cascades to customer_emails and customer_phones.
+	if _, err := db.Exec(`DELETE FROM tickets WHERE org_id = $1`, orgID); err != nil {
+		log.Fatalf("wipe tickets: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM customers WHERE org_id = $1`, orgID); err != nil {
+		log.Fatalf("wipe customers: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM agents WHERE org_id = $1`, orgID); err != nil {
+		log.Fatalf("wipe agents: %v", err)
+	}
+	log.Println("wiped existing data")
+
 	// Customers
 	customerIDs := make([]string, 0, len(customerData))
 	for _, c := range customerData {
