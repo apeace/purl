@@ -131,9 +131,10 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify bearer token. Zendesk is configured to send the webhook secret
-	// as "Authorization: Bearer <secret>".
+	// as "Authorization: Bearer <secret>". The scheme name is case-insensitive
+	// per RFC 7235, so accept any casing.
 	auth := r.Header.Get("Authorization")
-	if !strings.HasPrefix(auth, "Bearer ") || auth[len("Bearer "):] != webhookSecret {
+	if !strings.EqualFold(auth[:min(len(auth), 7)], "bearer ") || auth[7:] != webhookSecret {
 		http.Error(w, "invalid authorization", http.StatusUnauthorized)
 		return
 	}
