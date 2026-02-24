@@ -1,7 +1,7 @@
 import { computed, reactive, ref } from "vue"
 import { defineStore } from "pinia"
-import { getTickets } from "@purl/lib"
-import type { AppTicketRow } from "@purl/lib"
+import { getTickets, getTicketsByTicketIdComments } from "@purl/lib"
+import type { AppTicketCommentRow, AppTicketRow } from "@purl/lib"
 
 // ── Types ───────────────────────────────────────────────
 
@@ -109,9 +109,7 @@ function toTicket(t: AppTicketRow): Ticket {
     temperature: "warm",
     assignee: (t as AppTicketRow & { assignee_name?: string }).assignee_name ?? "Unassigned",
     notes: "",
-    messages: description
-      ? [{ id: 1, from: "customer", channel: "email", time: formatWait(createdAt), text: description }]
-      : [],
+    messages: [],
     ticketHistory: [
       { time: formatWait(createdAt), event: "Ticket created" },
     ],
@@ -313,6 +311,32 @@ export const useTicketStore = defineStore("tickets", () => {
     return loadTickets()
   }
 
+  // Track which ticket IDs have had comments loaded to avoid duplicate fetches
+  const loadedCommentTickets = new Set<string>()
+
+  function commentToMessage(c: AppTicketCommentRow, index: number): Message {
+    return {
+      id: index,
+      from: c.role === "agent" ? "agent" : "customer",
+      channel: c.channel ?? "email",
+      time: formatWait(c.created_at ?? ""),
+      text: c.body ?? "",
+    }
+  }
+
+  async function loadComments(ticketId: string) {
+    if (loadedCommentTickets.has(ticketId)) return
+    loadedCommentTickets.add(ticketId)
+
+    const { data } = await getTicketsByTicketIdComments({ path: { ticketID: ticketId } })
+    if (!data) return
+
+    const ticket = tickets.value.find((t) => t.id === ticketId)
+    if (!ticket) return
+
+    ticket.messages = data.map((c, i) => commentToMessage(c, i + 1))
+  }
+
   // Auto-load on first store access
   loadTickets()
 
@@ -329,6 +353,7 @@ export const useTicketStore = defineStore("tickets", () => {
     hudLongestWait,
     hudOpen,
     hudResolvedToday,
+    loadComments,
     loadTickets,
     markRead,
     openTickets,

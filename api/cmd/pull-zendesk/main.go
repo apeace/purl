@@ -31,12 +31,17 @@ type ZendeskTicketsResponse struct {
 	NextPage *string         `json:"next_page"`
 }
 
+type ZendeskCommentVia struct {
+	Channel string `json:"channel"`
+}
+
 type ZendeskComment struct {
-	ID        int64     `json:"id"`
-	Body      string    `json:"body"`
-	AuthorID  int64     `json:"author_id"`
-	Public    bool      `json:"public"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64             `json:"id"`
+	Body      string            `json:"body"`
+	AuthorID  int64             `json:"author_id"`
+	Public    bool              `json:"public"`
+	Via       ZendeskCommentVia `json:"via"`
+	CreatedAt time.Time         `json:"created_at"`
 }
 
 type ZendeskCommentsResponse struct {
@@ -299,9 +304,9 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $6)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body, c.CreatedAt,
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $7)`,
+				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.CreatedAt,
 			)
 			if err != nil {
 				log.Fatalf("insert comment %d: %v", c.ID, err)
@@ -403,6 +408,24 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 	}
 
 	return all, nil
+}
+
+// mapCommentChannel maps a Zendesk via.channel value and public flag to our comment_channel enum.
+// Private comments (public=false) are always internal notes regardless of channel.
+func mapCommentChannel(viaChannel string, public bool) string {
+	if !public {
+		return "internal"
+	}
+	switch viaChannel {
+	case "email":
+		return "email"
+	case "sms", "native_messaging", "whatsapp":
+		return "sms"
+	case "voice", "phone":
+		return "voice"
+	default:
+		return "web"
+	}
 }
 
 // mapZendeskStatusCategory maps a Zendesk ticket status to the zendesk_status_category

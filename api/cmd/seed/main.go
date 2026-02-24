@@ -86,6 +86,8 @@ var zendeskStatuses = []string{
 	"closed",
 }
 
+var commentChannels = []string{"email", "email", "email", "web", "web", "sms", "internal"}
+
 var customerCommentBodies = []string{
 	"Still experiencing this issue. Please advise.",
 	"I rebooted the modem again — no change.",
@@ -269,10 +271,20 @@ func main() {
 				body = pick(agentCommentBodies)
 			}
 
+			channel := pick(commentChannels)
+			// Internal notes are agent-only; force agent role for them
+			if channel == "internal" {
+				customerAuthorID = nil
+				id := agentIDs[rand.Intn(len(agentIDs))]
+				agentAuthorID = &id
+				role = "agent"
+				body = pick(agentCommentBodies)
+			}
+
 			_, err := db.Exec(
-				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body)
-				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
-				ticketID, customerAuthorID, agentAuthorID, role, body,
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel)`,
+				ticketID, customerAuthorID, agentAuthorID, role, body, channel,
 			)
 			if err != nil {
 				log.Fatalf("insert comment: %v", err)
