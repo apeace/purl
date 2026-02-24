@@ -126,6 +126,17 @@ export const useKanbanStore = defineStore("kanban", () => {
     })
   }
 
+  async function changeColumnColor(boardId: string, columnId: string, color: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    const col = board.stages.find((s) => s.id === columnId)
+    if (col) col.color = color // optimistic update
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
   async function addColumn(boardId: string, name: string, color: string) {
     const board = boards.value.find((b) => b.id === boardId)
     if (!board) return
@@ -199,6 +210,7 @@ export const useKanbanStore = defineStore("kanban", () => {
     addCardToBoard,
     addColumn,
     boards,
+    changeColumnColor,
     createBoard,
     deleteBoard,
     deleteColumn,

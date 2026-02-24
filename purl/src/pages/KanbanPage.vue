@@ -55,6 +55,7 @@
         @column-drag-start="columnDraggingId = $event"
         @column-drag-end="columnDraggingId = null; columnDropIndex = -1"
         @rename="onColumnRename"
+        @change-color="onColumnColorChange"
         @delete="onColumnDelete"
       />
       <div
@@ -189,6 +190,7 @@ import { ChevronLeft, ChevronRight, Clock, Plus, Search, X } from "lucide-vue-ne
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
+import { COLUMN_COLORS } from "../components/ColorPicker.vue"
 import ConfirmModal from "../components/ConfirmModal.vue"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
@@ -201,7 +203,7 @@ import { useTicketStore } from "../stores/useTicketStore"
 const route = useRoute()
 const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
-const { addCardToBoard, addColumn, deleteColumn, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
+const { addCardToBoard, addColumn, changeColumnColor, deleteColumn, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
 const ticketStore = useTicketStore()
 const { filterKeyword, tickets } = storeToRefs(ticketStore)
 const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = ticketStore
@@ -314,6 +316,11 @@ function onColumnRename(stageId: string, name: string) {
   renameColumn(currentBoard.value.id, stageId, name)
 }
 
+function onColumnColorChange(stageId: string, color: string) {
+  if (!currentBoard.value) return
+  changeColumnColor(currentBoard.value.id, stageId, color)
+}
+
 const confirmDeleteColumnVisible = ref(false)
 const pendingDeleteColumnId = ref<string | null>(null)
 
@@ -331,11 +338,7 @@ function confirmDeleteColumn() {
 
 // ── Add column ───────────────────────────────────────────
 
-const COLUMN_PALETTE = [
-  "#38bdf8", "#6366f1", "#a855f7", "#ec4899",
-  "#f97316", "#f59e0b", "#34d399", "#60a5fa",
-  "#ef4444", "#14b8a6", "#84cc16", "#94a3b8",
-]
+const COLUMN_PALETTE = COLUMN_COLORS
 
 const addingColumn = ref(false)
 const newColumnName = ref("")

@@ -31,11 +31,25 @@
     <!-- Column context menu (teleported to avoid clipping) -->
     <Teleport to="body">
       <div v-if="menuVisible" class="col-ctx-backdrop" @click="menuVisible = false">
-        <div class="col-ctx-menu" :style="{ top: `${menuY}px`, left: `${menuX}px` }" @click.stop>
+        <div
+          class="col-ctx-menu"
+          :class="{ 'col-ctx-menu--wide': menuShowColorPicker }"
+          :style="{ top: `${menuY}px`, left: `${menuX}px` }"
+          @click.stop
+        >
           <button class="col-ctx-item" @click="onMenuRename">
             <Pencil :size="13" />
             <span>Rename</span>
           </button>
+          <button class="col-ctx-item" @click="menuShowColorPicker = !menuShowColorPicker">
+            <Paintbrush :size="13" />
+            <span>Change color</span>
+            <span class="col-ctx-color-preview" :style="{ background: color }" />
+          </button>
+          <div v-if="menuShowColorPicker" class="col-ctx-picker">
+            <ColorPicker :model-value="color" @update:model-value="onMenuColorChange" />
+          </div>
+          <div class="col-ctx-divider" />
           <button class="col-ctx-item col-ctx-item--danger" @click="onMenuDelete">
             <Trash2 :size="13" />
             <span>Delete</span>
@@ -88,8 +102,9 @@
 </template>
 
 <script setup lang="ts">
-import { GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-vue-next"
+import { GripVertical, MoreHorizontal, Paintbrush, Pencil, Trash2 } from "lucide-vue-next"
 import { computed, nextTick, onMounted, ref, watch } from "vue"
+import ColorPicker from "./ColorPicker.vue"
 
 interface KanbanItem {
   id: string
@@ -122,6 +137,7 @@ const emit = defineEmits<{
   columnDragStart: [stageId: string]
   columnDragEnd: []
   rename: [stageId: string, name: string]
+  changeColor: [stageId: string, color: string]
   delete: [stageId: string]
 }>()
 
@@ -135,6 +151,7 @@ const titleInputRef = ref<HTMLInputElement | null>(null)
 const menuVisible = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
+const menuShowColorPicker = ref(false)
 // Counter prevents false dragleave when entering child elements
 let enterCount = 0
 
@@ -219,12 +236,19 @@ function cancelTitle() {
 function openMenu(event: MouseEvent) {
   menuX.value = event.clientX
   menuY.value = event.clientY
+  menuShowColorPicker.value = false
   menuVisible.value = true
 }
 
 function onMenuRename() {
   menuVisible.value = false
   startEditTitle()
+}
+
+function onMenuColorChange(newColor: string) {
+  menuVisible.value = false
+  menuShowColorPicker.value = false
+  emit("changeColor", props.status, newColor)
 }
 
 function onMenuDelete() {
@@ -564,5 +588,27 @@ onMounted(() => {
 .col-ctx-item--danger:hover {
   background: rgba(239, 68, 68, 0.12);
   color: #fca5a5;
+}
+
+.col-ctx-menu--wide {
+  min-width: 184px;
+}
+
+.col-ctx-color-preview {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.col-ctx-picker {
+  padding: 6px 12px 8px;
+}
+
+.col-ctx-divider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 3px 4px;
 }
 </style>
