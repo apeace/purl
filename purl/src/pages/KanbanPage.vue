@@ -173,6 +173,14 @@
       @close="closeStagePicker"
       @pick="onStagePicked"
     />
+
+    <ConfirmModal
+      :visible="confirmDeleteColumnVisible"
+      title="Delete this column?"
+      message="Cards in this column will be removed from the board. Tickets will not be deleted."
+      @confirm="confirmDeleteColumn"
+      @cancel="confirmDeleteColumnVisible = false"
+    />
   </div>
 </template>
 
@@ -181,6 +189,7 @@ import { ChevronLeft, ChevronRight, Clock, Plus, Search, X } from "lucide-vue-ne
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
+import ConfirmModal from "../components/ConfirmModal.vue"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
@@ -305,9 +314,19 @@ function onColumnRename(stageId: string, name: string) {
   renameColumn(currentBoard.value.id, stageId, name)
 }
 
+const confirmDeleteColumnVisible = ref(false)
+const pendingDeleteColumnId = ref<string | null>(null)
+
 function onColumnDelete(stageId: string) {
-  if (!currentBoard.value) return
-  deleteColumn(currentBoard.value.id, stageId)
+  pendingDeleteColumnId.value = stageId
+  confirmDeleteColumnVisible.value = true
+}
+
+function confirmDeleteColumn() {
+  confirmDeleteColumnVisible.value = false
+  if (!pendingDeleteColumnId.value || !currentBoard.value) return
+  deleteColumn(currentBoard.value.id, pendingDeleteColumnId.value)
+  pendingDeleteColumnId.value = null
 }
 
 // ── Add column ───────────────────────────────────────────

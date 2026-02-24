@@ -219,6 +219,14 @@
       @rename="startRename"
       @delete="handleDeleteBoard"
     />
+
+    <ConfirmModal
+      :visible="confirmDeleteVisible"
+      title="Delete this board?"
+      message="This will permanently remove the board and all its columns. Tickets will not be deleted."
+      @confirm="confirmDeleteBoard"
+      @cancel="cancelDeleteBoard"
+    />
   </div>
 </template>
 
@@ -228,6 +236,7 @@ import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import BoardContextMenu from "../components/BoardContextMenu.vue"
+import ConfirmModal from "../components/ConfirmModal.vue"
 import CreateBoardModal from "../components/CreateBoardModal.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
@@ -285,12 +294,25 @@ function openContextMenu(e: MouseEvent, boardId: string) {
   ctxMenuVisible.value = true
 }
 
+const confirmDeleteVisible = ref(false)
+
 function handleDeleteBoard() {
   ctxMenuVisible.value = false
   if (!ctxBoardId.value) return
+  confirmDeleteVisible.value = true
+}
+
+function confirmDeleteBoard() {
+  confirmDeleteVisible.value = false
+  if (!ctxBoardId.value) return
   const wasViewing = route.params.boardId === ctxBoardId.value
   deleteBoard(ctxBoardId.value)
+  ctxBoardId.value = null
   if (wasViewing) router.push("/kanban")
+}
+
+function cancelDeleteBoard() {
+  confirmDeleteVisible.value = false
 }
 
 // Inline rename
