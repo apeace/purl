@@ -173,10 +173,10 @@ const canCreate = computed(() => {
   return boardName.value.trim() && stages.value.some((s) => s.name.trim())
 })
 
-function handleCreate() {
+async function handleCreate() {
   if (!canCreate.value) return
   const validStages = stages.value.filter((s) => s.name.trim())
-  const board = createBoard(boardName.value.trim(), validStages)
+  const board = await createBoard(boardName.value.trim(), validStages)
   emit("created", board.id)
 }
 </script>
