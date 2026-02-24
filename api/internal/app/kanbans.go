@@ -16,7 +16,7 @@ type kanbanColumn struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 	Name          string    `json:"name"`
 	Position      int       `json:"position"`
-	ZendeskStatus string    `json:"zendesk_status"`
+	ZendeskStatus *string   `json:"zendesk_status"`
 	Color         string    `json:"color"`
 }
 
@@ -293,8 +293,8 @@ func (a *App) putKanbanColumns(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, item := range items {
-		if item.Name == "" || item.ZendeskStatus == "" || item.Color == "" {
-			http.Error(w, "each column requires name, zendesk_status, and color", http.StatusBadRequest)
+		if item.Name == "" || item.Color == "" {
+			http.Error(w, "each column requires name and color", http.StatusBadRequest)
 			return
 		}
 	}
@@ -359,13 +359,13 @@ func (a *App) putKanbanColumns(w http.ResponseWriter, r *http.Request) {
 		if item.ID != nil {
 			_, err = tx.ExecContext(r.Context(), `
 				UPDATE board_columns
-				SET name=$2, position=$3, zendesk_status=$4::zendesk_status_category, color=$5
+				SET name=$2, position=$3, zendesk_status=NULLIF($4, '')::zendesk_status_category, color=$5
 				WHERE id=$1
 			`, *item.ID, item.Name, item.Position, item.ZendeskStatus, item.Color)
 		} else {
 			_, err = tx.ExecContext(r.Context(), `
 				INSERT INTO board_columns (board_id, name, position, zendesk_status, color)
-				VALUES ($1, $2, $3, $4::zendesk_status_category, $5)
+				VALUES ($1, $2, $3, NULLIF($4, '')::zendesk_status_category, $5)
 			`, boardID, item.Name, item.Position, item.ZendeskStatus, item.Color)
 		}
 		if err != nil {
