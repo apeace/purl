@@ -2,7 +2,22 @@
   <div class="kanban-page">
     <template v-if="!selectedTicketId">
     <div class="kanban-header">
-      <h1 class="page-title">{{ pageTitle }}</h1>
+      <template v-if="editingBoardTitle">
+        <input
+          ref="boardTitleInputRef"
+          v-model="boardTitleValue"
+          class="page-title-input"
+          @blur="commitBoardTitle"
+          @keydown.enter.prevent="commitBoardTitle"
+          @keydown.escape="cancelBoardTitle"
+        />
+      </template>
+      <h1
+        v-else
+        class="page-title"
+        :class="{ 'page-title--editable': canEditBoard }"
+        @click="startEditBoardTitle"
+      >{{ pageTitle }}</h1>
       <div class="header-controls">
         <div class="kanban-search">
           <Search :size="14" class="kanban-search-icon" />
@@ -18,17 +33,33 @@
         <FilterPanel :custom-stages="currentBoard?.stages" />
       </div>
     </div>
-    <div class="stages-scroll">
+    <div
+      ref="stagesScrollEl"
+      class="stages-scroll"
+      @dragover.prevent="onColumnDragOver"
+      @dragleave="onColumnDragLeave"
+      @drop="onColumnDrop"
+    >
       <KanbanStage
         v-for="(stage, i) in stages"
         :key="stage.status"
         v-bind="stage"
         :dragging-id="draggingId"
+        :can-edit="canEditBoard"
+        :class="{ 'stage--col-dragging': columnDraggingId === stage.status }"
         :delay="150 + i * 100"
         @select="selectedTicketId = $event"
         @drag-start="draggingId = $event"
         @drag-end="draggingId = null"
         @drop="onDrop"
+        @column-drag-start="columnDraggingId = $event"
+        @column-drag-end="columnDraggingId = null; columnDropIndex = -1"
+        @rename="onColumnRename"
+      />
+      <div
+        v-if="columnDropIndex >= 0 && columnDropX !== null"
+        class="col-drop-indicator"
+        :style="{ left: `${columnDropX}px` }"
       />
     </div>
     </template>
@@ -128,7 +159,7 @@
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
@@ -141,7 +172,7 @@ import { useTicketStore } from "../stores/useTicketStore"
 const route = useRoute()
 const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
-const { addCardToBoard, getBoardById, moveCard } = kanbanStore
+const { addCardToBoard, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
 const ticketStore = useTicketStore()
 const { filterKeyword, tickets } = storeToRefs(ticketStore)
 const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = ticketStore
@@ -149,6 +180,19 @@ const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = tic
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)
 const searchQuery = ref("")
+const stagesScrollEl = ref<HTMLElement | null>(null)
+
+// ── Column drag-and-drop ─────────────────────────────────
+
+const columnDraggingId = ref<string | null>(null)
+const columnDropIndex = ref(-1)
+const columnDropX = ref<number | null>(null)
+
+// ── Board title rename ───────────────────────────────────
+
+const editingBoardTitle = ref(false)
+const boardTitleValue = ref("")
+const boardTitleInputRef = ref<HTMLInputElement | null>(null)
 
 // ── Board awareness ──────────────────────────────────────
 
@@ -158,12 +202,14 @@ const currentBoard = computed(() =>
 )
 
 const pageTitle = computed(() => currentBoard.value?.name ?? "Kanban")
+const canEditBoard = computed(() => !!currentBoard.value && !currentBoard.value.isDefault)
 
 // Reset state on board switch
 watch(boardId, () => {
   selectedTicketId.value = null
   searchQuery.value = ""
   filterStatuses.clear()
+  editingBoardTitle.value = false
 })
 
 // ── Stage definitions ────────────────────────────────────
@@ -230,6 +276,90 @@ function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
   draggingId.value = null
   if (!currentBoard.value) return
   moveCard(currentBoard.value.id, ticketId, status)
+}
+
+// ── Column rename ────────────────────────────────────────
+
+function onColumnRename(stageId: string, name: string) {
+  if (!currentBoard.value) return
+  renameColumn(currentBoard.value.id, stageId, name)
+}
+
+// ── Column drag-and-drop reorder ─────────────────────────
+
+function onColumnDragOver(event: DragEvent) {
+  if (!event.dataTransfer?.types.includes("application/x-purl-column")) return
+  const scroll = stagesScrollEl.value
+  if (!scroll) return
+  const stageEls = scroll.querySelectorAll(".stage")
+  let idx = stageEls.length
+  for (let i = 0; i < stageEls.length; i++) {
+    const rect = stageEls[i].getBoundingClientRect()
+    if (event.clientX < rect.left + rect.width / 2) { idx = i; break }
+  }
+  columnDropIndex.value = idx
+
+  // Calculate pixel X for the drop indicator, relative to scroll container
+  const scrollRect = scroll.getBoundingClientRect()
+  if (stageEls.length === 0) {
+    columnDropX.value = null
+    return
+  }
+  if (idx === 0) {
+    const rect = stageEls[0].getBoundingClientRect()
+    // Clamp to 2px minimum so the indicator is never clipped at the left edge
+    columnDropX.value = Math.max(2, rect.left - scrollRect.left + scroll.scrollLeft - 8)
+  } else if (idx >= stageEls.length) {
+    const rect = stageEls[stageEls.length - 1].getBoundingClientRect()
+    columnDropX.value = rect.right - scrollRect.left + scroll.scrollLeft + 6
+  } else {
+    const prevRect = stageEls[idx - 1].getBoundingClientRect()
+    const nextRect = stageEls[idx].getBoundingClientRect()
+    columnDropX.value = (prevRect.right + nextRect.left) / 2 - scrollRect.left + scroll.scrollLeft
+  }
+}
+
+function onColumnDragLeave(event: DragEvent) {
+  if (!stagesScrollEl.value?.contains(event.relatedTarget as Node)) {
+    columnDropIndex.value = -1
+    columnDropX.value = null
+  }
+}
+
+function onColumnDrop(event: DragEvent) {
+  const stageId = event.dataTransfer?.getData("application/x-purl-column")
+  if (!stageId || !currentBoard.value) return
+  const stages = currentBoard.value.stages
+  const fromIdx = stages.findIndex((s) => s.id === stageId)
+  let toIdx = columnDropIndex.value
+  columnDropIndex.value = -1
+  columnDropX.value = null
+  if (toIdx < 0 || fromIdx === -1 || toIdx === fromIdx || toIdx === fromIdx + 1) return
+  const newOrder = stages.map((s) => s.id)
+  newOrder.splice(fromIdx, 1)
+  if (toIdx > fromIdx) toIdx--
+  newOrder.splice(toIdx, 0, stageId)
+  reorderColumns(currentBoard.value.id, newOrder)
+}
+
+// ── Board title rename ───────────────────────────────────
+
+function startEditBoardTitle() {
+  if (!canEditBoard.value || !currentBoard.value) return
+  boardTitleValue.value = currentBoard.value.name
+  editingBoardTitle.value = true
+  nextTick(() => { boardTitleInputRef.value?.focus(); boardTitleInputRef.value?.select() })
+}
+
+function commitBoardTitle() {
+  if (boardTitleValue.value.trim() && currentBoard.value) {
+    renameBoard(currentBoard.value.id, boardTitleValue.value.trim())
+  }
+  editingBoardTitle.value = false
+}
+
+function cancelBoardTitle() {
+  editingBoardTitle.value = false
 }
 
 // ── Split view state ─────────────────────────────────────
@@ -353,6 +483,31 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   letter-spacing: -0.02em;
 }
 
+.page-title--editable {
+  cursor: text;
+}
+
+.page-title--editable:hover {
+  text-decoration: underline;
+  text-decoration-color: rgba(99, 102, 241, 0.4);
+  text-underline-offset: 3px;
+}
+
+.page-title-input {
+  font-size: 22px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.02em;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid rgba(99, 102, 241, 0.6);
+  outline: none;
+  font-family: inherit;
+  padding: 0 2px 2px;
+  min-width: 120px;
+  width: auto;
+}
+
 .header-controls {
   display: flex;
   align-items: center;
@@ -418,7 +573,25 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   display: flex;
   gap: 14px;
   overflow-x: auto;
-  padding-bottom: 16px;
+  padding: 0 0 16px 4px;
+  position: relative;
+}
+
+.stage--col-dragging {
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+
+.col-drop-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 16px;
+  width: 2px;
+  background: rgba(99, 102, 241, 0.7);
+  border-radius: 1px;
+  pointer-events: none;
+  z-index: 10;
+  transform: translateX(-50%);
 }
 
 /* ── Split view ─────────────────────────────────────────── */

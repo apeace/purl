@@ -104,6 +104,28 @@ export const useKanbanStore = defineStore("kanban", () => {
     await patchKanbansByBoardId({ path: { boardID: boardId }, body: { name } })
   }
 
+  async function reorderColumns(boardId: string, newOrder: string[]) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    // Optimistic update
+    board.stages = newOrder.map((id) => board.stages.find((s) => s.id === id)!).filter(Boolean)
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
+  async function renameColumn(boardId: string, columnId: string, name: string) {
+    const board = boards.value.find((b) => b.id === boardId)
+    if (!board) return
+    const col = board.stages.find((s) => s.id === columnId)
+    if (col) col.name = name // optimistic update
+    await putKanbansByBoardIdColumns({
+      path: { boardID: boardId },
+      body: board.stages.map((s, i) => ({ id: s.id, name: s.name, color: s.color, position: i })),
+    })
+  }
+
   async function addCardToBoard(boardId: string, ticketId: string, stageId: string) {
     const board = boards.value.find((b) => b.id === boardId)
     if (!board) return
@@ -148,5 +170,7 @@ export const useKanbanStore = defineStore("kanban", () => {
     loadBoards,
     moveCard,
     renameBoard,
+    renameColumn,
+    reorderColumns,
   }
 })

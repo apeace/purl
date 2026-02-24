@@ -1,8 +1,27 @@
 <template>
   <div class="stage" :class="{ 'stage--visible': visible, 'stage--dragover': dragOver }">
     <div class="stage-header">
+      <div
+        v-if="canEdit"
+        class="column-drag-handle"
+        draggable="true"
+        @dragstart.stop="onColumnDragStart"
+        @dragend.stop="onColumnDragEnd"
+      >
+        <GripVertical :size="12" />
+      </div>
       <div class="stage-dot" :style="{ background: color }" />
-      <span class="stage-title">{{ title }}</span>
+      <template v-if="editingTitle">
+        <input
+          ref="titleInputRef"
+          v-model="editValue"
+          class="stage-title-input"
+          @blur="commitTitle"
+          @keydown.enter.prevent="commitTitle"
+          @keydown.escape="cancelTitle"
+        />
+      </template>
+      <span v-else class="stage-title" @click="startEditTitle">{{ title }}</span>
       <span class="stage-count">{{ count }}</span>
     </div>
     <div
@@ -50,7 +69,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue"
+import { GripVertical } from "lucide-vue-next"
+import { computed, nextTick, onMounted, ref, watch } from "vue"
 
 interface KanbanItem {
   id: string
@@ -68,8 +88,10 @@ const props = withDefaults(defineProps<{
   items: KanbanItem[]
   status: string
   draggingId: string | null
+  canEdit?: boolean
   delay?: number
 }>(), {
+  canEdit: false,
   delay: 0,
 })
 
@@ -78,16 +100,26 @@ const emit = defineEmits<{
   drop: [payload: { ticketId: string; status: string }]
   dragStart: [id: string]
   dragEnd: []
+  columnDragStart: [stageId: string]
+  columnDragEnd: []
+  rename: [stageId: string, name: string]
 }>()
 
 const visible = ref(false)
 const dragOver = ref(false)
 const dropIndex = ref(-1)
 const stageCardsEl = ref<HTMLElement | null>(null)
+const editingTitle = ref(false)
+const editValue = ref("")
+const titleInputRef = ref<HTMLInputElement | null>(null)
 // Counter prevents false dragleave when entering child elements
 let enterCount = 0
 
 const isSource = computed(() => props.items.some((i) => i.id === props.draggingId))
+
+function isCardDrag(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes("text/plain") ?? false
+}
 
 function onDragStart(event: DragEvent, id: string) {
   event.dataTransfer!.effectAllowed = "move"
@@ -97,6 +129,7 @@ function onDragStart(event: DragEvent, id: string) {
 }
 
 function onDragOver(event: DragEvent) {
+  if (!isCardDrag(event)) return
   if (!stageCardsEl.value || !props.draggingId || isSource.value) return
   const slots = stageCardsEl.value.querySelectorAll(".card-slot")
   let index = slots.length
@@ -110,12 +143,14 @@ function onDragOver(event: DragEvent) {
   dropIndex.value = index
 }
 
-function onDragEnter() {
+function onDragEnter(event: DragEvent) {
+  if (!isCardDrag(event)) return
   enterCount++
   dragOver.value = true
 }
 
-function onDragLeave() {
+function onDragLeave(event: DragEvent) {
+  if (!isCardDrag(event)) return
   enterCount--
   if (enterCount <= 0) {
     enterCount = 0
@@ -124,11 +159,38 @@ function onDragLeave() {
 }
 
 function onDrop(event: DragEvent) {
+  if (!isCardDrag(event)) return
   enterCount = 0
   dragOver.value = false
   dropIndex.value = -1
   const ticketId = event.dataTransfer!.getData("text/plain")
   if (ticketId) emit("drop", { ticketId, status: props.status })
+}
+
+function onColumnDragStart(event: DragEvent) {
+  event.dataTransfer!.effectAllowed = "move"
+  event.dataTransfer!.setData("application/x-purl-column", props.status)
+  emit("columnDragStart", props.status)
+}
+
+function onColumnDragEnd() {
+  emit("columnDragEnd")
+}
+
+function startEditTitle() {
+  if (!props.canEdit) return
+  editValue.value = props.title
+  editingTitle.value = true
+  nextTick(() => titleInputRef.value?.select())
+}
+
+function commitTitle() {
+  if (editValue.value.trim()) emit("rename", props.status, editValue.value.trim())
+  editingTitle.value = false
+}
+
+function cancelTitle() {
+  editingTitle.value = false
 }
 
 // Reset drag state when dragging ends (covers Escape/cancel and cross-column cleanup)
@@ -177,6 +239,25 @@ onMounted(() => {
   margin-bottom: 14px;
 }
 
+.column-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(148, 163, 184, 0.4);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s;
+  flex-shrink: 0;
+}
+
+.stage-header:hover .column-drag-handle {
+  opacity: 1;
+}
+
+.column-drag-handle:active {
+  cursor: grabbing;
+}
+
 .stage-dot {
   width: 8px;
   height: 8px;
@@ -189,6 +270,20 @@ onMounted(() => {
   font-weight: 600;
   color: #e2e8f0;
   flex: 1;
+}
+
+.stage-title-input {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  color: #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.5);
+  border-radius: 5px;
+  padding: 1px 5px;
+  font-family: inherit;
+  outline: none;
+  min-width: 0;
 }
 
 .stage-count {
