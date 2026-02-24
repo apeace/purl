@@ -63,6 +63,12 @@ func main() {
 	}
 	apiKey := hex.EncodeToString(keyBytes)
 
+	secretBytes := make([]byte, 32)
+	if _, err := rand.Read(secretBytes); err != nil {
+		log.Fatalf("generate webhook secret: %v", err)
+	}
+	webhookSecret := hex.EncodeToString(secretBytes)
+
 	tx, err := db.Begin()
 	if err != nil {
 		log.Fatalf("begin tx: %v", err)
@@ -71,8 +77,8 @@ func main() {
 
 	var orgID string
 	err = tx.QueryRow(
-		`INSERT INTO organizations (name, api_key) VALUES ($1, $2) RETURNING id`,
-		name, apiKey,
+		`INSERT INTO organizations (name, api_key, zendesk_webhook_secret) VALUES ($1, $2, $3) RETURNING id`,
+		name, apiKey, webhookSecret,
 	).Scan(&orgID)
 	if err != nil {
 		log.Fatalf("insert org: %v", err)
@@ -104,4 +110,5 @@ func main() {
 
 	log.Printf("created org %q (id: %s)", name, orgID)
 	log.Printf("api_key: %s", apiKey)
+	log.Printf("zendesk_webhook_secret: %s", webhookSecret)
 }

@@ -147,10 +147,10 @@ func main() {
 	for _, u := range allAgents {
 		var agentID string
 		err := db.QueryRow(
-			`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3)
-			 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+			`INSERT INTO agents (email, name, org_id, zendesk_user_id) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, zendesk_user_id = EXCLUDED.zendesk_user_id
 			 RETURNING id`,
-			u.Email, u.Name, orgID,
+			u.Email, u.Name, orgID, u.ID,
 		).Scan(&agentID)
 		if err != nil {
 			log.Fatalf("insert agent %s: %v", u.Email, err)
@@ -222,8 +222,8 @@ func main() {
 			}
 			var customerID string
 			err := db.QueryRow(
-				`INSERT INTO customers (name, org_id) VALUES ($1, $2) RETURNING id`,
-				u.Name, orgID,
+				`INSERT INTO customers (name, org_id, zendesk_user_id) VALUES ($1, $2, $3) RETURNING id`,
+				u.Name, orgID, u.ID,
 			).Scan(&customerID)
 			if err != nil {
 				log.Fatalf("insert customer %s: %v", u.Email, err)
@@ -304,9 +304,9 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $7)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.CreatedAt,
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8)`,
+				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
 			)
 			if err != nil {
 				log.Fatalf("insert comment %d: %v", c.ID, err)

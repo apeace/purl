@@ -33,6 +33,7 @@ func (a *App) Handler() http.Handler {
 	})
 	r.Get("/docs/*", httpSwagger.Handler())
 	r.Get("/health", a.health)
+	r.Post("/webhooks/zendesk/{orgSlug}", a.handleZendeskWebhook)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
