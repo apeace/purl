@@ -135,8 +135,6 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 	// per RFC 7235, so accept any casing.
 	auth := r.Header.Get("Authorization")
 	tokenOK := strings.EqualFold(auth[:min(len(auth), 7)], "bearer ") && auth[7:] == webhookSecret
-	log.Printf("webhook %s: auth header=%q (len %d), secret len=%d, ok=%v",
-		orgSlug, auth, len(auth), len(webhookSecret), tokenOK)
 	if !tokenOK {
 		http.Error(w, "invalid authorization", http.StatusUnauthorized)
 		return
