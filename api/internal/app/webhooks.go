@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,6 +17,29 @@ import (
 )
 
 // ── Zendesk webhook payload types ────────────────────────────────────────────
+
+// flexInt64 unmarshals both numeric and quoted-string JSON integers.
+// Zendesk event subscription webhook payloads send numeric IDs as strings
+// (e.g. "id": "12345"), unlike the Zendesk REST API which uses bare numbers.
+type flexInt64 int64
+
+func (n *flexInt64) UnmarshalJSON(b []byte) error {
+	var i int64
+	if err := json.Unmarshal(b, &i); err == nil {
+		*n = flexInt64(i)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("flexInt64: expected number or string, got %s", b)
+	}
+	parsed, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("flexInt64: parse %q: %w", s, err)
+	}
+	*n = flexInt64(parsed)
+	return nil
+}
 
 type zendeskWebhookEnvelope struct {
 	ID        string          `json:"id"`
@@ -26,18 +50,18 @@ type zendeskWebhookEnvelope struct {
 }
 
 type webhookTicketDetail struct {
-	ID          int64     `json:"id"`
-	Subject     string    `json:"subject"`
-	Description string    `json:"description"`
-	Status      string    `json:"status"`
-	RequesterID int64     `json:"requester_id"`
-	AssigneeID  *int64    `json:"assignee_id"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          flexInt64  `json:"id"`
+	Subject     string     `json:"subject"`
+	Description string     `json:"description"`
+	Status      string     `json:"status"`
+	RequesterID flexInt64  `json:"requester_id"`
+	AssigneeID  *flexInt64 `json:"assignee_id"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 type webhookTicketDeletedDetail struct {
-	ID int64 `json:"id"`
+	ID flexInt64 `json:"id"`
 }
 
 type webhookCommentVia struct {
@@ -45,9 +69,9 @@ type webhookCommentVia struct {
 }
 
 type webhookCommentDetail struct {
-	ID        int64             `json:"id"`
-	TicketID  int64             `json:"ticket_id"`
-	AuthorID  int64             `json:"author_id"`
+	ID        flexInt64         `json:"id"`
+	TicketID  flexInt64         `json:"ticket_id"`
+	AuthorID  flexInt64         `json:"author_id"`
 	Body      string            `json:"body"`
 	Public    bool              `json:"public"`
 	Via       webhookCommentVia `json:"via"`
@@ -55,7 +79,7 @@ type webhookCommentDetail struct {
 }
 
 type webhookUserDetail struct {
-	ID        int64     `json:"id"`
+	ID        flexInt64 `json:"id"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	Role      string    `json:"role"` // "end-user", "agent", "admin"
@@ -322,7 +346,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 	return tx.Commit()
 }
 
-func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID int64) error {
+func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) error {
 	_, err := db.ExecContext(ctx,
 		`DELETE FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
 		orgID, zendeskTicketID,
@@ -449,7 +473,7 @@ func handleUserUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookU
 // resolveOrFetchCustomer returns the purl customer ID for a given Zendesk user ID.
 // If not found in the DB, it fetches the user from the Zendesk REST API and upserts.
 // Returns ("", nil) if the user exists in Zendesk but is not an end-user.
-func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID string, zendeskUserID int64) (string, error) {
+func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID string, zendeskUserID flexInt64) (string, error) {
 	var customerID string
 	err := tx.QueryRowContext(ctx,
 		`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
@@ -479,7 +503,7 @@ func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID s
 
 // upsertCustomer inserts or updates a customer row identified by (org_id, zendesk_user_id).
 // Also adds the email to customer_emails if not already present.
-func upsertCustomer(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID int64, name, email string) (string, error) {
+func upsertCustomer(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID flexInt64, name, email string) (string, error) {
 	var customerID string
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO customers (name, org_id, zendesk_user_id)
@@ -510,7 +534,7 @@ func upsertCustomer(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID
 }
 
 // upsertAgent inserts or updates an agent row identified by (org_id, zendesk_user_id).
-func upsertAgent(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID int64, name, email string) (string, error) {
+func upsertAgent(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID flexInt64, name, email string) (string, error) {
 	var agentID string
 	err := tx.QueryRowContext(ctx, `
 		INSERT INTO agents (email, name, org_id, zendesk_user_id)
@@ -572,7 +596,7 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 
 // fetchZendeskUser fetches a single user from the Zendesk REST API using the
 // org's stored credentials. Returns nil if credentials are not configured.
-func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUserID int64) (*webhookUserDetail, error) {
+func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUserID flexInt64) (*webhookUserDetail, error) {
 	var subdomain, email, apiKey string
 	err := db.QueryRowContext(ctx,
 		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
