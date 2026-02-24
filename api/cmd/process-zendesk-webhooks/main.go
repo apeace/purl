@@ -30,5 +30,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("process webhooks: %v", err)
 	}
-	log.Printf("processed %d webhook event(s)", n)
+	if n > 0 {
+		log.Printf("processed %d webhook event(s)", n)
+	}
 }

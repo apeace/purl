@@ -36,6 +36,11 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   nginx:
     build:
@@ -61,6 +66,11 @@ services:
       postgres:
         condition: service_healthy
     entrypoint: /bin/sh -c "while :; do ./bin/process-zendesk-webhooks; sleep 2; done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   certbot:
     image: certbot/certbot
