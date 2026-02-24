@@ -64,11 +64,12 @@ type webhookUserDetail struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// ── Main handler ──────────────────────────────────────────────────────────────
+// ── HTTP ingestion handler ────────────────────────────────────────────────────
 
 // @Summary     Zendesk webhook receiver
 // @Tags        Webhooks
-// @Description Receives and processes Zendesk event subscription webhooks
+// @Description Receives Zendesk event subscription webhooks, verifies the
+// @Description signature, and stores the raw payload for async processing.
 // @Accept      json
 // @Param       orgSlug  path  string  true  "Organization slug"
 // @Success     204
@@ -79,7 +80,7 @@ type webhookUserDetail struct {
 func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 	orgSlug := chi.URLParam(r, "orgSlug")
 
-	// Read and buffer the body before any DB work; we need it for signature verification.
+	// Buffer body before any DB work; needed for signature verification.
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "read body", http.StatusBadRequest)
@@ -115,86 +116,157 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Parse only the envelope fields we need to store; leave detail opaque.
 	var envelope zendeskWebhookEnvelope
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
 		return
 	}
 
-	ctx := r.Context()
-	var handlerErr error
-
-	switch envelope.Type {
-	case "zen:event-type:ticket.created", "zen:event-type:ticket.updated":
-		var detail webhookTicketDetail
-		if err := json.Unmarshal(envelope.Detail, &detail); err != nil {
-			http.Error(w, "invalid detail", http.StatusBadRequest)
-			return
-		}
-		handlerErr = a.handleTicketUpsert(ctx, orgID, &detail)
-
-	case "zen:event-type:ticket.deleted":
-		var detail webhookTicketDeletedDetail
-		if err := json.Unmarshal(envelope.Detail, &detail); err != nil {
-			http.Error(w, "invalid detail", http.StatusBadRequest)
-			return
-		}
-		handlerErr = a.handleTicketDeleted(ctx, orgID, detail.ID)
-
-	case "zen:event-type:comment.created":
-		var detail webhookCommentDetail
-		if err := json.Unmarshal(envelope.Detail, &detail); err != nil {
-			http.Error(w, "invalid detail", http.StatusBadRequest)
-			return
-		}
-		handlerErr = a.handleCommentCreated(ctx, orgID, &detail)
-
-	case "zen:event-type:comment.updated":
-		var detail webhookCommentDetail
-		if err := json.Unmarshal(envelope.Detail, &detail); err != nil {
-			http.Error(w, "invalid detail", http.StatusBadRequest)
-			return
-		}
-		handlerErr = a.handleCommentUpdated(ctx, orgID, &detail)
-
-	case "zen:event-type:user.created", "zen:event-type:user.updated":
-		var detail webhookUserDetail
-		if err := json.Unmarshal(envelope.Detail, &detail); err != nil {
-			http.Error(w, "invalid detail", http.StatusBadRequest)
-			return
-		}
-		handlerErr = a.handleUserUpsert(ctx, orgID, &detail)
-
-	default:
-		// Unknown event type — acknowledge and ignore.
-		log.Printf("webhook: unknown event type %q for org %q", envelope.Type, orgSlug)
-	}
-
-	if handlerErr != nil {
-		http.Error(w, "handler error", http.StatusInternalServerError)
-		log.Printf("webhook: %s for org %q: %v", envelope.Type, orgSlug, handlerErr)
+	// Store the raw payload — processing happens asynchronously via
+	// the process-zendesk-webhooks command.
+	_, err = a.db.ExecContext(r.Context(), `
+		INSERT INTO zendesk_webhook_events (org_id, event_id, event_type, payload)
+		VALUES ($1, $2, $3, $4)`,
+		orgID, envelope.ID, envelope.Type, body,
+	)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		log.Printf("webhook: store event %q for org %q: %v", envelope.ID, orgSlug, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ── Async processing ──────────────────────────────────────────────────────────
+
+// ProcessPendingWebhooks fetches all unprocessed webhook events from the
+// zendesk_webhook_events table and processes them in arrival order. It marks
+// each successfully processed event with the current timestamp. Events that fail
+// processing are left with processed_at = NULL so they are retried on the next
+// call. Unsupported event types are silently acknowledged and also marked as
+// processed to prevent them from accumulating.
+//
+// Returns the number of events that were marked as processed.
+func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, org_id, event_type, payload
+		FROM zendesk_webhook_events
+		WHERE processed_at IS NULL
+		ORDER BY created_at ASC
+		LIMIT 1000`,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("query pending events: %w", err)
+	}
+
+	type pending struct {
+		id        string
+		orgID     string
+		eventType string
+		payload   []byte
+	}
+	var events []pending
+	for rows.Next() {
+		var e pending
+		if err := rows.Scan(&e.id, &e.orgID, &e.eventType, &e.payload); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan event: %w", err)
+		}
+		events = append(events, e)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate events: %w", err)
+	}
+
+	processed := 0
+	for _, e := range events {
+		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload); err != nil {
+			log.Printf("process-zendesk-webhooks: event %s (%s) failed: %v — will retry", e.id, e.eventType, err)
+			continue
+		}
+		if _, err := db.ExecContext(ctx,
+			`UPDATE zendesk_webhook_events SET processed_at = now() WHERE id = $1`,
+			e.id,
+		); err != nil {
+			log.Printf("process-zendesk-webhooks: mark event %s processed: %v", e.id, err)
+			continue
+		}
+		processed++
+	}
+	return processed, nil
+}
+
+// processZendeskEvent dispatches a single webhook event to the appropriate
+// handler based on event_type. Unknown types are silently ignored (return nil)
+// so the caller can mark them as processed without logging noise.
+func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType string, payload []byte) error {
+	var envelope zendeskWebhookEnvelope
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		return fmt.Errorf("unmarshal envelope: %w", err)
+	}
+
+	switch eventType {
+	case "zen:event-type:ticket.created", "zen:event-type:ticket.updated":
+		var d webhookTicketDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal ticket detail: %w", err)
+		}
+		return handleTicketUpsert(ctx, db, orgID, &d)
+
+	case "zen:event-type:ticket.deleted":
+		var d webhookTicketDeletedDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal ticket deleted detail: %w", err)
+		}
+		return handleTicketDeleted(ctx, db, orgID, d.ID)
+
+	case "zen:event-type:comment.created":
+		var d webhookCommentDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal comment detail: %w", err)
+		}
+		return handleCommentCreated(ctx, db, orgID, &d)
+
+	case "zen:event-type:comment.updated":
+		var d webhookCommentDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal comment detail: %w", err)
+		}
+		return handleCommentUpdated(ctx, db, orgID, &d)
+
+	case "zen:event-type:user.created", "zen:event-type:user.updated":
+		var d webhookUserDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal user detail: %w", err)
+		}
+		return handleUserUpsert(ctx, db, orgID, &d)
+
+	default:
+		// Silently ignore unsupported event types; nil causes the caller to
+		// mark the event as processed so it does not accumulate.
+		return nil
+	}
+}
+
 // ── Event handlers ────────────────────────────────────────────────────────────
 
-func (a *App) handleTicketUpsert(ctx context.Context, orgID string, d *webhookTicketDetail) error {
-	tx, err := a.db.BeginTx(ctx, nil)
+func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookTicketDetail) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
 
 	// Resolve reporter customer. If missing, fetch from Zendesk and upsert.
-	reporterID, err := a.resolveOrFetchCustomer(ctx, tx, orgID, d.RequesterID)
+	reporterID, err := resolveOrFetchCustomer(ctx, db, tx, orgID, d.RequesterID)
 	if err != nil {
 		return fmt.Errorf("resolve reporter: %w", err)
 	}
 	if reporterID == "" {
-		log.Printf("webhook ticket %d: reporter %d not found and could not be fetched — skipping", d.ID, d.RequesterID)
+		log.Printf("process-zendesk-webhooks: ticket %d: reporter %d not found and could not be fetched — skipping", d.ID, d.RequesterID)
 		return nil
 	}
 
@@ -202,17 +274,16 @@ func (a *App) handleTicketUpsert(ctx context.Context, orgID string, d *webhookTi
 	var assigneeID *string
 	if d.AssigneeID != nil {
 		var agentID string
-		err := tx.QueryRowContext(ctx,
+		if err := tx.QueryRowContext(ctx,
 			`SELECT id FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
 			orgID, *d.AssigneeID,
-		).Scan(&agentID)
-		if err == nil {
+		).Scan(&agentID); err == nil {
 			assigneeID = &agentID
 		}
 		// Unknown assignee is non-fatal; leave assignee_id NULL.
 	}
 
-	// Capture old zendesk_status before upserting, so we can detect changes.
+	// Capture old zendesk_status so we can detect changes for kanban sync.
 	var oldStatus *string
 	_ = tx.QueryRowContext(ctx,
 		`SELECT zendesk_status::text FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
@@ -227,12 +298,12 @@ func (a *App) handleTicketUpsert(ctx context.Context, orgID string, d *webhookTi
 		                     zendesk_status, zendesk_ticket_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7, $8, $9)
 		ON CONFLICT (org_id, zendesk_ticket_id) DO UPDATE SET
-			title       = EXCLUDED.title,
-			description = EXCLUDED.description,
-			reporter_id = EXCLUDED.reporter_id,
-			assignee_id = EXCLUDED.assignee_id,
+			title          = EXCLUDED.title,
+			description    = EXCLUDED.description,
+			reporter_id    = EXCLUDED.reporter_id,
+			assignee_id    = EXCLUDED.assignee_id,
 			zendesk_status = EXCLUDED.zendesk_status,
-			updated_at  = EXCLUDED.updated_at
+			updated_at     = EXCLUDED.updated_at
 		RETURNING id`,
 		d.Subject, d.Description, reporterID, assigneeID, orgID,
 		newStatus, d.ID, d.CreatedAt, d.UpdatedAt,
@@ -241,7 +312,7 @@ func (a *App) handleTicketUpsert(ctx context.Context, orgID string, d *webhookTi
 		return fmt.Errorf("upsert ticket: %w", err)
 	}
 
-	// Sync kanban only when the ticket is new or its status changed.
+	// Sync default kanban only when the ticket is new or its status changed.
 	isNew := oldStatus == nil
 	statusChanged := oldStatus != nil && *oldStatus != newStatus
 	if isNew || statusChanged {
@@ -253,16 +324,16 @@ func (a *App) handleTicketUpsert(ctx context.Context, orgID string, d *webhookTi
 	return tx.Commit()
 }
 
-func (a *App) handleTicketDeleted(ctx context.Context, orgID string, zendeskTicketID int64) error {
-	_, err := a.db.ExecContext(ctx,
+func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID int64) error {
+	_, err := db.ExecContext(ctx,
 		`DELETE FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
 		orgID, zendeskTicketID,
 	)
 	return err
 }
 
-func (a *App) handleCommentCreated(ctx context.Context, orgID string, d *webhookCommentDetail) error {
-	tx, err := a.db.BeginTx(ctx, nil)
+func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -275,8 +346,8 @@ func (a *App) handleCommentCreated(ctx context.Context, orgID string, d *webhook
 		orgID, d.TicketID,
 	).Scan(&ticketID)
 	if err == sql.ErrNoRows {
-		log.Printf("webhook comment %d: ticket %d not found — skipping", d.ID, d.TicketID)
-		return nil
+		// Ticket may not be processed yet; return an error to trigger a retry.
+		return fmt.Errorf("ticket %d not found (may arrive in a later event)", d.TicketID)
 	}
 	if err != nil {
 		return fmt.Errorf("look up ticket: %w", err)
@@ -288,32 +359,26 @@ func (a *App) handleCommentCreated(ctx context.Context, orgID string, d *webhook
 	var role string
 
 	var customerID string
-	err = tx.QueryRowContext(ctx,
+	if err := tx.QueryRowContext(ctx,
 		`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
 		orgID, d.AuthorID,
-	).Scan(&customerID)
-	if err == nil {
+	).Scan(&customerID); err == nil {
 		customerAuthorID = &customerID
 		role = "customer"
 	} else {
 		var agentID string
-		err = tx.QueryRowContext(ctx,
+		if err := tx.QueryRowContext(ctx,
 			`SELECT id FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
 			orgID, d.AuthorID,
-		).Scan(&agentID)
-		if err == nil {
+		).Scan(&agentID); err == nil {
 			agentAuthorID = &agentID
 			role = "agent"
 		} else {
 			// Author unknown — try fetching from Zendesk before giving up.
-			fetched, fetchErr := a.fetchZendeskUser(ctx, orgID, d.AuthorID)
-			if fetchErr != nil {
-				log.Printf("webhook comment %d: author %d not found and fetch failed: %v — skipping", d.ID, d.AuthorID, fetchErr)
-				return nil
-			}
-			if fetched == nil {
-				log.Printf("webhook comment %d: author %d not found — skipping", d.ID, d.AuthorID)
-				return nil
+			fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, d.AuthorID)
+			if fetchErr != nil || fetched == nil {
+				// Return an error so this event is retried after the user arrives.
+				return fmt.Errorf("author %d not found (may arrive in a later event)", d.AuthorID)
 			}
 			if fetched.Role == "end-user" {
 				cid, upsertErr := upsertCustomer(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
@@ -333,14 +398,13 @@ func (a *App) handleCommentCreated(ctx context.Context, orgID string, d *webhook
 		}
 	}
 
-	channel := mapCommentChannel(d.Via.Channel, d.Public)
-
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ticket_comments
 			(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at)
 		VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8)
 		ON CONFLICT (ticket_id, zendesk_comment_id) DO NOTHING`,
-		ticketID, customerAuthorID, agentAuthorID, role, d.Body, channel, d.ID, d.CreatedAt,
+		ticketID, customerAuthorID, agentAuthorID, role,
+		d.Body, mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert comment: %w", err)
@@ -349,9 +413,9 @@ func (a *App) handleCommentCreated(ctx context.Context, orgID string, d *webhook
 	return tx.Commit()
 }
 
-func (a *App) handleCommentUpdated(ctx context.Context, orgID string, d *webhookCommentDetail) error {
+func handleCommentUpdated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail) error {
 	// Only the body changes on a comment update (agent redaction).
-	_, err := a.db.ExecContext(ctx, `
+	_, err := db.ExecContext(ctx, `
 		UPDATE ticket_comments
 		SET body = $1, updated_at = now()
 		WHERE zendesk_comment_id = $2
@@ -361,8 +425,8 @@ func (a *App) handleCommentUpdated(ctx context.Context, orgID string, d *webhook
 	return err
 }
 
-func (a *App) handleUserUpsert(ctx context.Context, orgID string, d *webhookUserDetail) error {
-	tx, err := a.db.BeginTx(ctx, nil)
+func handleUserUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookUserDetail) error {
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
@@ -385,8 +449,9 @@ func (a *App) handleUserUpsert(ctx context.Context, orgID string, d *webhookUser
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 // resolveOrFetchCustomer returns the purl customer ID for a given Zendesk user ID.
-// If not found in the database, it fetches the user from the Zendesk API and upserts them.
-func (a *App) resolveOrFetchCustomer(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID int64) (string, error) {
+// If not found in the DB, it fetches the user from the Zendesk REST API and upserts.
+// Returns ("", nil) if the user exists in Zendesk but is not an end-user.
+func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID string, zendeskUserID int64) (string, error) {
 	var customerID string
 	err := tx.QueryRowContext(ctx,
 		`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
@@ -399,13 +464,12 @@ func (a *App) resolveOrFetchCustomer(ctx context.Context, tx *sql.Tx, orgID stri
 		return "", fmt.Errorf("look up customer: %w", err)
 	}
 
-	// Not in DB — fetch from Zendesk.
-	user, err := a.fetchZendeskUser(ctx, orgID, zendeskUserID)
+	user, err := fetchZendeskUser(ctx, db, orgID, zendeskUserID)
 	if err != nil {
 		return "", fmt.Errorf("fetch zendesk user %d: %w", zendeskUserID, err)
 	}
 	if user == nil || user.Role != "end-user" {
-		return "", nil // not a customer; caller will skip the ticket
+		return "", nil
 	}
 
 	id, err := upsertCustomer(ctx, tx, orgID, user.ID, user.Name, user.Email)
@@ -460,8 +524,8 @@ func upsertAgent(ctx context.Context, tx *sql.Tx, orgID string, zendeskUserID in
 	return agentID, err
 }
 
-// syncTicketToDefaultKanban removes a ticket from its current column in the default
-// board and re-inserts it into the column matching the given zendesk_status.
+// syncTicketToDefaultKanban removes a ticket from its current column in the
+// default board and re-inserts it into the column matching zendesk_status.
 // If no matching column exists, the ticket is simply removed from the board.
 func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID, status string) error {
 	var defaultBoardID string
@@ -476,7 +540,6 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 		return fmt.Errorf("query default board: %w", err)
 	}
 
-	// Remove from any column in the default board.
 	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM board_tickets WHERE board_id = $1 AND ticket_id = $2`,
 		defaultBoardID, ticketID,
@@ -484,7 +547,6 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 		return fmt.Errorf("remove from board: %w", err)
 	}
 
-	// Find the column for the new status.
 	var columnID string
 	err = tx.QueryRowContext(ctx,
 		`SELECT id FROM board_columns WHERE board_id = $1 AND zendesk_status = $2::zendesk_status_category`,
@@ -497,7 +559,6 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 		return fmt.Errorf("query column for status %q: %w", status, err)
 	}
 
-	// Append at the end of the column.
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO board_tickets (board_id, column_id, ticket_id, position)
 		VALUES ($1, $2, $3,
@@ -513,9 +574,9 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 
 // fetchZendeskUser fetches a single user from the Zendesk REST API using the
 // org's stored credentials. Returns nil if credentials are not configured.
-func (a *App) fetchZendeskUser(ctx context.Context, orgID string, zendeskUserID int64) (*webhookUserDetail, error) {
+func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUserID int64) (*webhookUserDetail, error) {
 	var subdomain, email, apiKey string
-	err := a.db.QueryRowContext(ctx,
+	err := db.QueryRowContext(ctx,
 		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
 		 FROM organizations WHERE id = $1`,
 		orgID,
@@ -524,7 +585,7 @@ func (a *App) fetchZendeskUser(ctx context.Context, orgID string, zendeskUserID 
 		return nil, fmt.Errorf("load zendesk creds: %w", err)
 	}
 	if subdomain == "" || email == "" || apiKey == "" {
-		return nil, nil // no credentials; caller handles gracefully
+		return nil, nil
 	}
 
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
@@ -542,18 +603,18 @@ func (a *App) fetchZendeskUser(ctx context.Context, orgID string, zendeskUserID 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("zendesk returned %s: %s", resp.Status, body)
+		return nil, fmt.Errorf("zendesk returned %s: %s", resp.Status, respBody)
 	}
 
 	var wrapper struct {
 		User webhookUserDetail `json:"user"`
 	}
-	if err := json.Unmarshal(body, &wrapper); err != nil {
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
 		return nil, fmt.Errorf("parse user: %w", err)
 	}
 	return &wrapper.User, nil
