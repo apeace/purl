@@ -7,7 +7,6 @@ import (
 	"os"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
 )
 
 var customerData = []struct {
@@ -120,11 +119,14 @@ var agentCommentBodies = []string{
 	"Plan change is now active. Speed increase should be immediate.",
 }
 
-const seedAPIKey = "deadbeef000000000000000000000001cafebabe000000000000000000000002"
-
 func pick(s []string) string { return s[rand.Intn(len(s))] }
 
 func main() {
+	if len(os.Args) < 2 {
+		log.Fatal("usage: seed <org-slug>")
+	}
+	slug := os.Args[1]
+
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
@@ -140,30 +142,15 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
-	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("goose set dialect: %v", err)
-	}
-	// Uses the OS filesystem so this must be run from the api/ directory.
-	// Reset drops all tables, Up recreates them — ensures a clean slate even
-	// if the schema has changed since the migration was last applied.
-	if err := goose.Reset(db, "migrations"); err != nil {
-		log.Fatalf("goose reset: %v", err)
-	}
-	if err := goose.Up(db, "migrations"); err != nil {
-		log.Fatalf("goose up: %v", err)
-	}
-	log.Println("reset and migrated")
-
-	// Organization
 	var orgID string
-	err = db.QueryRow(
-		`INSERT INTO organizations (name, api_key) VALUES ($1, $2) RETURNING id`,
-		"Brightwave Internet", seedAPIKey,
-	).Scan(&orgID)
-	if err != nil {
-		log.Fatalf("insert org: %v", err)
+	err = db.QueryRow(`SELECT id FROM organizations WHERE slug = $1`, slug).Scan(&orgID)
+	if err == sql.ErrNoRows {
+		log.Fatalf("org not found: %s", slug)
 	}
-	log.Printf("inserted org (api_key: %s)", seedAPIKey)
+	if err != nil {
+		log.Fatalf("lookup org: %v", err)
+	}
+	log.Printf("seeding into org %s (id: %s)", slug, orgID)
 
 	// Customers
 	customerIDs := make([]string, 0, len(customerData))
