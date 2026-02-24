@@ -41,6 +41,7 @@ func (a *App) Handler() http.Handler {
 		r.Use(a.requireAPIKey)
 		r.Get("/kanbans", a.listKanbans)
 		r.Post("/kanbans", a.createKanban)
+		r.Delete("/kanbans/{boardID}", a.deleteKanban)
 		r.Patch("/kanbans/{boardID}", a.updateKanban)
 		r.Get("/kanbans/{boardID}/tickets", a.listKanbanTickets)
 		r.Put("/kanbans/{boardID}/columns", a.putKanbanColumns)

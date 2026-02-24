@@ -202,6 +202,32 @@ func (a *App) listKanbans(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(boards)
 }
 
+// @Summary     Delete a Kanban board
+// @Tags        Kanbans
+// @Description Permanently deletes a Kanban board and all its columns and ticket assignments
+// @Param       boardID  path      string  true  "Board ID"
+// @Success     204
+// @Failure     401      {string}  string  "Unauthorized"
+// @Failure     403      {string}  string  "Forbidden"
+// @Failure     404      {string}  string  "Not Found"
+// @Security    ApiKeyAuth
+// @Router      /kanbans/{boardID} [delete]
+func (a *App) deleteKanban(w http.ResponseWriter, r *http.Request) {
+	boardID := a.requireBoardInOrg(w, r)
+	if boardID == "" {
+		return
+	}
+
+	_, err := a.db.ExecContext(r.Context(), `DELETE FROM boards WHERE id = $1`, boardID)
+	if err != nil {
+		http.Error(w, "delete failed", http.StatusInternalServerError)
+		log.Printf("deleteKanban delete: %v", err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // requireBoardInOrg checks that the board URL param exists, belongs to the org,
 // and is not a default board (which is read-only).
 // Returns the board ID on success, or writes an appropriate error and returns "".

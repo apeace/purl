@@ -1,6 +1,7 @@
 import { defineStore } from "pinia"
 import { ref } from "vue"
 import {
+  deleteKanbansByBoardId,
   getKanbans,
   getKanbansByBoardIdTickets,
   patchKanbansByBoardId,
@@ -89,9 +90,10 @@ export const useKanbanStore = defineStore("kanban", () => {
     return board
   }
 
-  function deleteBoard(_boardId: string) {
-    // TODO: No DELETE /kanbans/{boardID} endpoint exists in the API
-    throw new Error("deleteBoard is not supported by the API")
+  async function deleteBoard(boardId: string) {
+    const idx = boards.value.findIndex((b) => b.id === boardId)
+    if (idx !== -1) boards.value.splice(idx, 1) // optimistic update
+    await deleteKanbansByBoardId({ path: { boardID: boardId } })
   }
 
   async function renameBoard(boardId: string, name: string) {
