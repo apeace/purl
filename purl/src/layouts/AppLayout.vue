@@ -227,20 +227,23 @@
 
 <script setup lang="ts">
 import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Plus, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import BoardContextMenu from "../components/BoardContextMenu.vue"
 import CreateBoardModal from "../components/CreateBoardModal.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
-import { useKanbanBoards } from "../composables/useKanbanBoards"
-import type { BoardStage } from "../composables/useKanbanBoards"
+import { useKanbanStore } from "../stores/useKanbanStore"
+import type { BoardStage } from "../stores/useKanbanStore"
 
 const open = ref(false)
 const collapsed = ref(false)
 const cmdOpen = ref(false)
 const cmdInput = ref<HTMLInputElement | null>(null)
 
-const { addCardToBoard, boards, deleteBoard, renameBoard } = useKanbanBoards()
+const kanbanStore = useKanbanStore()
+const { boards } = storeToRefs(kanbanStore)
+const { addCardToBoard, deleteBoard, renameBoard } = kanbanStore
 
 const navBefore = [
   { path: "/go", label: "Go", icon: Zap },

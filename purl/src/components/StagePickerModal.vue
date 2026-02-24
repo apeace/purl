@@ -27,7 +27,7 @@
 
 <script setup lang="ts">
 import { X } from "lucide-vue-next"
-import type { BoardStage } from "../composables/useKanbanBoards"
+import type { BoardStage } from "../stores/useKanbanStore"
 
 defineProps<{
   visible: boolean

@@ -1,0 +1,398 @@
+import { computed, reactive, ref } from "vue"
+import { defineStore } from "pinia"
+import { getTickets } from "@purl/lib"
+import type { AppTicketRow } from "@purl/lib"
+
+// ── Types ───────────────────────────────────────────────
+
+export interface Message {
+  id: number
+  from: string
+  channel: string
+  time: string
+  text: string
+  type?: string
+  recording?: {
+    duration: number
+    waveform: number[]
+    transcript: { speaker: string; time: string; text: string }[]
+  }
+}
+
+export interface Ticket {
+  id: string
+  name: string
+  company: string
+  ticketId: string
+  subject: string
+  priority: string
+  createdAt: string
+  wait: string
+  avatarColor: string
+  status: string
+  read: boolean
+  starred: boolean
+  labels: string[]
+  time: string
+  email: string
+  phone: string
+  subscription: { status: string; id: string; plan: string }
+  tags: string[]
+  temperature: string
+  assignee: string
+  notes: string
+  messages: Message[]
+  ticketHistory: { time: string; event: string }[]
+  subscriberHistory: { ticketId: string; status: string; subject: string; date: string }[]
+}
+
+export interface AiSuggestion {
+  headline: string
+  body: string
+  action: string
+  replyText: string
+}
+
+// ── Module-level helpers (exported for direct import at call sites) ──
+
+const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
+const STATUS_ORDER: Record<string, number> = { escalated: 0, new: 1, open: 2, pending: 3, solved: 4, closed: 5 }
+
+const AVATAR_COLORS = [
+  "#6366f1", "#ec4899", "#34d399", "#f59e0b",
+  "#3b82f6", "#a855f7", "#ef4444", "#14b8a6",
+]
+
+export function avatarColor(name: string): string {
+  let hash = 0
+  for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+export function parseWait(str: string): number {
+  let mins = 0
+  const d = str.match(/(\d+)d/)
+  const h = str.match(/(\d+)h/)
+  const m = str.match(/(\d+)m/)
+  if (d) mins += parseInt(d[1]) * 1440
+  if (h) mins += parseInt(h[1]) * 60
+  if (m) mins += parseInt(m[1])
+  return mins
+}
+
+function formatWait(createdAt: string): string {
+  const mins = Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000)
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  const rem = mins % 60
+  return rem ? `${hrs}h ${rem}m` : `${hrs}h`
+}
+
+function formatTime(createdAt: string): string {
+  return new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+}
+
+function toTicket(t: AppTicketRow): Ticket {
+  const id = t.id ?? ""
+  const reporterName = t.reporter_name ?? ""
+  const createdAt = t.created_at ?? ""
+  const description = t.description ?? ""
+  return {
+    id,
+    name: reporterName,
+    company: "",
+    ticketId: `#${id.slice(0, 6).toUpperCase()}`,
+    subject: t.title ?? "",
+    priority: t.priority ?? "",
+    createdAt,
+    wait: formatWait(createdAt),
+    avatarColor: avatarColor(reporterName),
+    status: t.status ?? "",
+    read: false,
+    starred: false,
+    labels: [],
+    time: formatTime(createdAt),
+    email: "",
+    phone: "",
+    subscription: { status: "active", id: "", plan: "" },
+    tags: [],
+    temperature: "warm",
+    assignee: (t as AppTicketRow & { assignee_name?: string }).assignee_name ?? "Unassigned",
+    notes: "",
+    messages: description
+      ? [{ id: 1, from: "customer", channel: "email", time: formatWait(createdAt), text: description }]
+      : [],
+    ticketHistory: [
+      { time: formatWait(createdAt), event: "Ticket created" },
+    ],
+    subscriberHistory: [],
+  }
+}
+
+// ── Store ────────────────────────────────────────────────
+
+export const useTicketStore = defineStore("tickets", () => {
+  const CURRENT_USER = "Alex Chen"
+
+  // ── State ─────────────────────────────────────────────
+
+  const tickets = ref<Ticket[]>([])
+
+  // Suggestions keyed by index — mapped to real ticket IDs via aiSuggestions computed
+  const aiSuggestionsList: AiSuggestion[] = [
+    {
+      headline: "Config 404 — matches known post-update bug",
+      body: "Sarah's error is identical to 3 tickets resolved last week after the v2.4 rollout. A missing config.json is caused by the new deploy script skipping static asset copy. Send the one-line fix and mark resolved.",
+      action: "Send fix & resolve",
+      replyText: "Hi Sarah! This is a known issue with the v2.4 update — the deploy script misses copying config.json. Run this in your project root: `cp node_modules/@purl/defaults/config.json public/`. That should fix it immediately. Let me know if you need anything else!",
+    },
+    {
+      headline: "CSV export bug — patch ships in 24h",
+      body: "This is a confirmed bug in v2.4.1 affecting all accounts on Chrome. Engineering has a fix merging today, deploying tomorrow morning. Recommend acknowledging and setting the expectation.",
+      action: "Acknowledge & set ETA",
+      replyText: "Hi Mike! This is a confirmed bug in v2.4.1 — our team already has a fix and it's deploying tomorrow morning. I'll follow up as soon as it's live. Sorry for the inconvenience!",
+    },
+    {
+      headline: "Billing overage — likely proration edge case",
+      body: "Orion Labs upgraded mid-cycle on Mar 3rd. The $600 difference matches a prorated annual add-on. Check their billing history to confirm, then share the breakdown.",
+      action: "Pull billing history",
+      replyText: "Hi Priya! I looked into this — the $600 difference is a prorated charge for the annual add-on activated on March 3rd. I've attached the itemized breakdown. Let me know if anything looks off and I'm happy to escalate to billing.",
+    },
+    {
+      headline: "Rate limit counter bug — known issue",
+      body: "The dashboard quota display has a caching lag of ~2h, so real usage can exceed what's shown. Check their actual usage in the admin panel and consider a temporary limit increase.",
+      action: "Check usage & offer increase",
+      replyText: "Hi James! There's a known 2-hour caching lag in the dashboard quota display, so your real-time usage can exceed what's shown there. I checked your account directly and you've hit 94% of your limit. I've bumped your limit by 20% for the next 48 hours while we sort out a permanent solution.",
+    },
+  ]
+
+  // Maps real ticket IDs to suggestions based on load order
+  const aiSuggestions = computed(() => {
+    const map: Record<string, AiSuggestion> = {}
+    tickets.value.forEach((t, i) => {
+      if (i < aiSuggestionsList.length) map[t.id] = aiSuggestionsList[i]
+    })
+    return map
+  })
+
+  const resolvedToday = ref(8)
+
+  // ── Filters ─────────────────────────────────────────────
+
+  const filterKeyword = ref("")
+  const filterPriorities = reactive(new Set<string>())
+  const filterAssignees = reactive(new Set<string>())
+  const filterStatuses = reactive(new Set<string>())
+
+  const filteredTickets = computed(() => {
+    let result = tickets.value
+
+    const kw = filterKeyword.value.trim().toLowerCase()
+    if (kw) {
+      result = result.filter((t) => {
+        const firstMsg = t.messages[0]?.text ?? ""
+        return t.subject.toLowerCase().includes(kw) || firstMsg.toLowerCase().includes(kw)
+      })
+    }
+
+    if (filterPriorities.size) {
+      result = result.filter((t) => filterPriorities.has(t.priority))
+    }
+    if (filterAssignees.size) {
+      result = result.filter((t) => filterAssignees.has(t.assignee))
+    }
+    if (filterStatuses.size) {
+      result = result.filter((t) => filterStatuses.has(t.status))
+    }
+
+    return result
+  })
+
+  const activeFilterCount = computed(() => {
+    let n = 0
+    if (filterKeyword.value.trim()) n++
+    if (filterPriorities.size) n++
+    if (filterAssignees.size) n++
+    if (filterStatuses.size) n++
+    return n
+  })
+
+  const uniqueAssignees = computed(() =>
+    [...new Set(tickets.value.map((t) => t.assignee))].sort()
+  )
+
+  function clearFilters() {
+    filterKeyword.value = ""
+    filterPriorities.clear()
+    filterAssignees.clear()
+    filterStatuses.clear()
+  }
+
+  // ── Sorting ─────────────────────────────────────────────
+
+  const sortBy = ref("time")
+
+  const sortedTickets = computed(() => {
+    const list = [...filteredTickets.value]
+    if (sortBy.value === "priority") {
+      list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9))
+    } else if (sortBy.value === "status") {
+      list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9))
+    } else if (sortBy.value === "assignee") {
+      list.sort((a, b) => a.assignee.localeCompare(b.assignee))
+    }
+    return list
+  })
+
+  // ── Derived state ───────────────────────────────────────
+
+  const openTickets = computed(() => tickets.value.filter((t) => t.status === "new" || t.status === "open"))
+
+  const hudOpen = computed(() => openTickets.value.length)
+
+  const hudLongestWait = computed(() => {
+    if (!openTickets.value.length) return "0m"
+    let max = 0
+    let maxStr = "0m"
+    for (const t of openTickets.value) {
+      const mins = parseWait(t.wait)
+      if (mins > max) {
+        max = mins
+        maxStr = t.wait
+      }
+    }
+    return maxStr
+  })
+
+  const hudResolvedToday = computed(() => resolvedToday.value)
+
+  // ── Mutations ───────────────────────────────────────────
+
+  function resolveTicket(id: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (!ticket || ticket.status === "solved" || ticket.status === "closed") return
+    ticket.status = "solved"
+    ticket.read = true
+    resolvedToday.value++
+  }
+
+  function archiveTicket(id: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.status = "closed"
+  }
+
+  function deleteTicket(id: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.status = "closed"
+  }
+
+  function markRead(id: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.read = true
+  }
+
+  function toggleStar(id: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.starred = !ticket.starred
+  }
+
+  function sendReply(id: string, text: string, channel = "email") {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (!ticket) return
+    ticket.messages.push({
+      id: ticket.messages.length + 1,
+      from: "agent",
+      channel,
+      time: "just now",
+      text,
+    })
+    ticket.read = true
+  }
+
+  function followAi(id: string) {
+    const suggestion = aiSuggestions.value[id]
+    if (!suggestion) return
+    sendReply(id, suggestion.replyText)
+  }
+
+  function setStatus(id: string, status: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.status = status
+  }
+
+  function setAssignee(id: string, assignee: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.assignee = assignee
+  }
+
+  function setTemperature(id: string, temperature: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.temperature = temperature
+  }
+
+  function addTag(id: string, tag: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket && !ticket.tags.includes(tag)) ticket.tags.push(tag)
+  }
+
+  function removeTag(id: string, tag: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.tags = ticket.tags.filter((t) => t !== tag)
+  }
+
+  function updateNotes(id: string, text: string) {
+    const ticket = tickets.value.find((t) => t.id === id)
+    if (ticket) ticket.notes = text
+  }
+
+  // ── Data fetching ────────────────────────────────────────
+
+  let loadPromise: Promise<void> | null = null
+
+  function loadTickets() {
+    if (!loadPromise) {
+      loadPromise = getTickets().then(({ data }) => {
+        if (data) tickets.value = data.map(toTicket)
+      })
+    }
+    return loadPromise
+  }
+
+  // Auto-load on first store access
+  loadTickets()
+
+  return {
+    activeFilterCount,
+    addTag,
+    aiSuggestions,
+    archiveTicket,
+    clearFilters,
+    CURRENT_USER,
+    deleteTicket,
+    filterAssignees,
+    filterKeyword,
+    filterPriorities,
+    filterStatuses,
+    filteredTickets,
+    followAi,
+    hudLongestWait,
+    hudOpen,
+    hudResolvedToday,
+    loadTickets,
+    markRead,
+    openTickets,
+    removeTag,
+    resolveTicket,
+    resolvedToday,
+    sendReply,
+    setAssignee,
+    setStatus,
+    setTemperature,
+    sortBy,
+    sortedTickets,
+    tickets,
+    toggleStar,
+    uniqueAssignees,
+    updateNotes,
+  }
+})

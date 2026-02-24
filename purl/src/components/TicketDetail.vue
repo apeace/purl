@@ -615,9 +615,10 @@
 
 <script setup lang="ts">
 import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets"
-import type { Message } from "../composables/useTickets"
+import { useTicketStore } from "../stores/useTicketStore"
+import type { Message } from "../stores/useTicketStore"
 
 const props = defineProps<{
   ticketId: string
@@ -629,18 +630,9 @@ const emit = defineEmits<{
   addToBoard: [ticketId: string]
 }>()
 
-const {
-  addTag,
-  aiSuggestions,
-  removeTag,
-  resolveTicket,
-  sendReply: sharedSendReply,
-  setAssignee,
-  setStatus,
-  setTemperature,
-  tickets,
-  updateNotes,
-} = useTickets()
+const ticketStore = useTicketStore()
+const { aiSuggestions, tickets } = storeToRefs(ticketStore)
+const { addTag, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
 
 const activeTab = ref("comms")
 const composeCollapsed = ref(true)

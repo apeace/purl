@@ -305,27 +305,16 @@
 
 <script setup lang="ts">
 import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Clock, Inbox, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import { useTickets } from "../composables/useTickets"
+import { avatarColor, useTicketStore } from "../stores/useTicketStore"
 import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors"
 
-const {
-  archiveTicket,
-  avatarColor,
-  CURRENT_USER,
-  deleteTicket,
-  filterAssignees,
-  filterPriorities,
-  filterStatuses,
-  markRead,
-  resolveTicket,
-  sortBy,
-  sortedTickets,
-  toggleStar,
-  uniqueAssignees,
-} = useTickets()
+const ticketStore = useTicketStore()
+const { sortBy, sortedTickets, uniqueAssignees } = storeToRefs(ticketStore)
+const { archiveTicket, CURRENT_USER, deleteTicket, filterAssignees, filterPriorities, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
 
 const activeTab = ref("all")
 

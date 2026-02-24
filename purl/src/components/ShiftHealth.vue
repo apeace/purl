@@ -42,10 +42,11 @@
 // Tiers: 90+ Excellent, 75+ Good, 60+ Fair, 40+ At Risk, <40 Critical
 
 import { ChevronDown, TrendingDown, TrendingUp } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets"
+import { useTicketStore } from "../stores/useTicketStore"
 
-const { hudOpen, hudResolvedToday } = useTickets()
+const { hudOpen, hudResolvedToday } = storeToRefs(useTicketStore())
 
 const AGENTS_ON_SHIFT = 2
 const ACCEPTABLE_PER_AGENT = 15

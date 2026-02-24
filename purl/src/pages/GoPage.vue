@@ -151,22 +151,23 @@
 
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import type { Ticket } from "../composables/useTickets"
-import { useTickets } from "../composables/useTickets"
+import { parseWait, useTicketStore } from "../stores/useTicketStore"
+import type { Ticket } from "../stores/useTicketStore"
 
+const ticketStore = useTicketStore()
 const {
   aiSuggestions,
   hudLongestWait,
   hudOpen,
   hudResolvedToday,
   openTickets: threads,
-  parseWait,
-  resolveTicket,
   resolvedToday,
-} = useTickets()
+} = storeToRefs(ticketStore)
+const { resolveTicket } = ticketStore
 
 const DAILY_GOAL = 20
 

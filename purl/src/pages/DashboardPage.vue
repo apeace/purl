@@ -109,13 +109,14 @@
 </template>
 
 <script setup lang="ts">
+import { storeToRefs } from "pinia"
 import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
 import StatCard from "../components/StatCard.vue"
-import { useTickets } from "../composables/useTickets"
+import { useTicketStore } from "../stores/useTicketStore"
 import { PRIORITY_COLORS } from "../utils/colors"
 
-const { hudOpen, hudResolvedToday, tickets } = useTickets()
+const { hudOpen, hudResolvedToday, tickets } = storeToRefs(useTicketStore())
 
 const hour = new Date().getHours()
 const greeting = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening"

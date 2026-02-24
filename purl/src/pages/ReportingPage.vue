@@ -158,11 +158,12 @@
 
 <script setup lang="ts">
 import { Activity, AlertTriangle, BookOpen, Clock, Heart, ShieldCheck, Users } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, ref } from "vue"
-import { useTickets } from "../composables/useTickets"
+import { useTicketStore } from "../stores/useTicketStore"
 import { STATUS_COLORS } from "../utils/colors"
 
-const { tickets } = useTickets()
+const { tickets } = storeToRefs(useTicketStore())
 
 const ranges = ["7D", "30D", "90D", "1Y"]
 const activeRange = ref("30D")

@@ -127,20 +127,25 @@
 
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
 import TicketDetail from "../components/TicketDetail.vue"
-import { useKanbanBoards } from "../composables/useKanbanBoards"
-import type { BoardStage } from "../composables/useKanbanBoards"
-import { useTickets } from "../composables/useTickets"
+import { useKanbanStore } from "../stores/useKanbanStore"
+import type { BoardStage } from "../stores/useKanbanStore"
+import { useTicketStore } from "../stores/useTicketStore"
 import { STATUS_COLORS } from "../utils/colors"
 
 const route = useRoute()
-const { addCardToBoard, boards, getBoardById, moveCard } = useKanbanBoards()
-const { filterAssignees, filterKeyword, filterPriorities, filterStatuses, filteredTickets, resolveTicket, setStatus, tickets } = useTickets()
+const kanbanStore = useKanbanStore()
+const { boards } = storeToRefs(kanbanStore)
+const { addCardToBoard, getBoardById, moveCard } = kanbanStore
+const ticketStore = useTicketStore()
+const { filteredTickets, filterKeyword, tickets } = storeToRefs(ticketStore)
+const { filterAssignees, filterPriorities, filterStatuses, resolveTicket, setStatus } = ticketStore
 
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)

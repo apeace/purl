@@ -80,7 +80,7 @@
 <script setup lang="ts">
 import { GripVertical, Minus, Plus, X } from "lucide-vue-next"
 import { computed, nextTick, ref, watch } from "vue"
-import { useKanbanBoards } from "../composables/useKanbanBoards"
+import { useKanbanStore } from "../stores/useKanbanStore"
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{
@@ -88,7 +88,7 @@ const emit = defineEmits<{
   created: [boardId: string]
 }>()
 
-const { createBoard } = useKanbanBoards()
+const { createBoard } = useKanbanStore()
 
 const PALETTE = [
   "#38bdf8", "#6366f1", "#a855f7", "#ec4899",
