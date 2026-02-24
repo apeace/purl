@@ -77,11 +77,12 @@ var descriptions = []string{
 	"Bill shows a charge that was not on the previous month's statement.",
 }
 
-// Weighted toward open/in_progress to reflect a realistic backlog.
-var statuses = []string{
+// Weighted toward active statuses to reflect a realistic backlog.
+var zendeskStatuses = []string{
+	"new", "new",
 	"open", "open", "open",
-	"in_progress", "in_progress",
-	"resolved",
+	"pending",
+	"solved",
 	"closed",
 }
 
@@ -120,6 +121,21 @@ var agentCommentBodies = []string{
 }
 
 func pick(s []string) string { return s[rand.Intn(len(s))] }
+
+func mapStatus(zendeskStatus string) string {
+	switch zendeskStatus {
+	case "new", "open":
+		return "open"
+	case "pending":
+		return "in_progress"
+	case "solved":
+		return "resolved"
+	case "closed":
+		return "closed"
+	default:
+		return "open"
+	}
+}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -216,18 +232,20 @@ func main() {
 			assigneeID = &id
 		}
 
+		zendeskStatus := pick(zendeskStatuses)
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7)
+			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, zendesk_status)
+			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8::zendesk_status_category)
 			 RETURNING id`,
 			pick(titles),
 			pick(descriptions),
-			pick(statuses),
+			mapStatus(zendeskStatus),
 			pick(priorities),
 			reporterID,
 			assigneeID,
 			orgID,
+			zendeskStatus,
 		).Scan(&id)
 		if err != nil {
 			log.Fatalf("insert ticket: %v", err)
@@ -274,4 +292,35 @@ func main() {
 		}
 	}
 	log.Printf("inserted %d comments", commentCount)
+
+	// Place tickets into the default Kanban board columns by zendesk_status.
+	var defaultBoardID string
+	err = db.QueryRow(
+		`SELECT id FROM boards WHERE org_id = $1 AND is_default = true`,
+		orgID,
+	).Scan(&defaultBoardID)
+	if err == sql.ErrNoRows {
+		log.Println("warn: no default Kanban board found — skipping ticket placement")
+		return
+	}
+	if err != nil {
+		log.Fatalf("query default board: %v", err)
+	}
+
+	result, err := db.Exec(`
+		INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+		SELECT
+			$1,
+			bc.id,
+			t.id,
+			(ROW_NUMBER() OVER (PARTITION BY bc.id ORDER BY t.created_at ASC) - 1)::integer
+		FROM tickets t
+		JOIN board_columns bc ON bc.board_id = $1 AND bc.zendesk_status = t.zendesk_status
+		WHERE t.org_id = $2
+	`, defaultBoardID, orgID)
+	if err != nil {
+		log.Fatalf("place tickets in kanban: %v", err)
+	}
+	placed, _ := result.RowsAffected()
+	log.Printf("placed %d tickets into default Kanban board", placed)
 }
