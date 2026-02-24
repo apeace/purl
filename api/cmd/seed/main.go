@@ -210,9 +210,9 @@ func main() {
 	}
 	log.Printf("inserted %d agents", len(agentIDs))
 
-	// Tickets
+	// Tickets — fake zendesk_ticket_ids start at 100001 to avoid collisions with real IDs
 	ticketIDs := make([]string, 0, 50)
-	for range 50 {
+	for i := range 50 {
 		reporterID := customerIDs[rand.Intn(len(customerIDs))]
 
 		// ~30% of tickets are unassigned
@@ -225,8 +225,8 @@ func main() {
 		zendeskStatus := pick(zendeskStatuses)
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, zendesk_status)
-			 VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, zendesk_status, zendesk_ticket_id)
+			 VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7)
 			 RETURNING id`,
 			pick(titles),
 			pick(descriptions),
@@ -234,6 +234,7 @@ func main() {
 			assigneeID,
 			orgID,
 			zendeskStatus,
+			100001+i,
 		).Scan(&id)
 		if err != nil {
 			log.Fatalf("insert ticket: %v", err)

@@ -20,7 +20,6 @@ type ZendeskTicket struct {
 	Subject     string    `json:"subject"`
 	Description string    `json:"description"`
 	Status      string    `json:"status"`
-	Priority    *string   `json:"priority"`
 	RequesterID int64     `json:"requester_id"`
 	AssigneeID  *int64    `json:"assignee_id"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -240,9 +239,6 @@ func main() {
 	ticketsByZendeskID := make(map[int64]string) // zendeskTicketID -> purl ticket UUID
 
 	for _, ticket := range ticketsResp.Tickets {
-		status := mapStatus(ticket.Status)
-		priority := mapPriority(ticket.Priority)
-
 		reporterID, ok := customersByZendeskID[ticket.RequesterID]
 		if !ok {
 			log.Printf("warn: skipping ticket %d — requester %d not found in customers map", ticket.ID, ticket.RequesterID)
@@ -258,19 +254,18 @@ func main() {
 
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8, $9, $10::zendesk_status_category)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status, zendesk_ticket_id)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::zendesk_status_category, $9)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
-			status,
-			priority,
 			reporterID,
 			assigneeID,
 			orgID,
 			ticket.CreatedAt,
 			ticket.UpdatedAt,
 			mapZendeskStatusCategory(ticket.Status),
+			ticket.ID,
 		).Scan(&ticketID)
 		if err != nil {
 			log.Fatalf("insert ticket %d: %v", ticket.ID, err)
@@ -304,7 +299,7 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body, created_at, updated_at)
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, created_at, updated_at)
 				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $6)`,
 				ticketID, customerAuthorID, agentAuthorID, role, c.Body, c.CreatedAt,
 			)
@@ -421,36 +416,5 @@ func mapZendeskStatusCategory(s string) string {
 		return "pending"
 	default:
 		return "open"
-	}
-}
-
-func mapStatus(s string) string {
-	switch s {
-	case "new", "open":
-		return "open"
-	case "pending", "hold":
-		return "in_progress"
-	case "solved":
-		return "resolved"
-	case "closed":
-		return "closed"
-	default:
-		return "open"
-	}
-}
-
-func mapPriority(p *string) string {
-	if p == nil {
-		return "medium"
-	}
-	switch *p {
-	case "low":
-		return "low"
-	case "high":
-		return "high"
-	case "urgent":
-		return "urgent"
-	default:
-		return "medium"
 	}
 }
