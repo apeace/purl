@@ -358,6 +358,11 @@ export const useTicketStore = defineStore("tickets", () => {
     return loadPromise
   }
 
+  function reloadTickets() {
+    loadPromise = null
+    return loadTickets()
+  }
+
   // Auto-load on first store access
   loadTickets()
 
@@ -381,6 +386,7 @@ export const useTicketStore = defineStore("tickets", () => {
     loadTickets,
     markRead,
     openTickets,
+    reloadTickets,
     removeTag,
     resolveTicket,
     resolvedToday,

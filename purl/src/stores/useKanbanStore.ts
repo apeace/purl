@@ -145,6 +145,7 @@ export const useKanbanStore = defineStore("kanban", () => {
     createBoard,
     deleteBoard,
     getBoardById,
+    loadBoards,
     moveCard,
     renameBoard,
   }

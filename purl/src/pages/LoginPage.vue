@@ -2,8 +2,12 @@
 import { ref } from "vue"
 import { useRouter } from "vue-router"
 import { setApiKey } from "../utils/api"
+import { useKanbanStore } from "../stores/useKanbanStore"
+import { useTicketStore } from "../stores/useTicketStore"
 
 const router = useRouter()
+const { loadBoards } = useKanbanStore()
+const { reloadTickets } = useTicketStore()
 const apiKey = ref("")
 const error = ref("")
 
@@ -14,6 +18,8 @@ function submit() {
     return
   }
   setApiKey(key)
+  loadBoards()
+  reloadTickets()
   router.push("/")
 }
 </script>
