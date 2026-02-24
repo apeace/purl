@@ -56,7 +56,6 @@
                     <div class="preview-ticket-top">
                       <div class="preview-avatar" :style="{ background: cardPreviews[opt.id]!.avatarColor }">{{ cardPreviews[opt.id]!.name[0] }}</div>
                       <span class="preview-name">{{ cardPreviews[opt.id]!.name }}</span>
-                      <span class="preview-badge" :class="`preview-badge--${cardPreviews[opt.id]!.priority}`">{{ cardPreviews[opt.id]!.priority }}</span>
                     </div>
                     <div class="preview-subject">{{ cardPreviews[opt.id]!.subject }}</div>
                     <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0]?.text }}</div>
@@ -137,9 +136,6 @@
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ thread.wait }}
               </span>
-              <span class="qcard-priority" :class="`qcard-priority--${thread.priority}`">
-                {{ thread.priority }}
-              </span>
             </div>
           </button>
         </div>
@@ -191,45 +187,38 @@ const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value
 const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
-  const highCount = threads.value.filter((t) => t.priority === "high").length
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
-    urgent: { stat: `${highCount} high priority`, detail: `Longest: ${hudLongestWait.value}` },
+    urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
     waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
-    quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length - highCount} medium/low` },
+    quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
     queue: { stat: `${hudOpen.value} open`, detail: `${hudResolvedToday.value}/${DAILY_GOAL} resolved` },
   }
 })
 
 const cardPreviews = computed<Record<string, Ticket | null>>(() => {
-  const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 }
   const all = [...threads.value]
 
-  const urgent = [...all].sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
-  const waiting = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
-  const quick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
-  const queueSorted = [...all]
+  const byWait = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  const byQuick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
 
   return {
-    urgent: urgent[0] ?? null,
-    waiting: waiting[0] ?? null,
-    quick: quick[0] ?? null,
-    queue: queueSorted[0] ?? null,
+    urgent: byWait[0] ?? null,
+    waiting: byWait[0] ?? null,
+    quick: byQuick[0] ?? null,
+    queue: all[0] ?? null,
   }
 })
 
 const chosenOption = computed(() => priorityOptions.find((o) => o.id === chosenPriority.value) ?? null)
 
 const sortedQueue = computed(() => {
-  const priorityRank: Record<string, number> = { high: 0, medium: 1, low: 2 }
   const all = [...threads.value]
   const id = chosenPriority.value
-  if (id === "urgent") {
-    all.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || parseWait(b.wait) - parseWait(a.wait))
-  } else if (id === "waiting") {
+  if (id === "urgent" || id === "waiting") {
     all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
   } else if (id === "quick") {
-    all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || priorityRank[b.priority] - priorityRank[a.priority] || parseWait(a.wait) - parseWait(b.wait))
+    all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
   }
   return all
 })
@@ -239,8 +228,6 @@ const canGoPrev = computed(() => queueIndex.value > 0)
 const canGoNext = computed(() => queueIndex.value < sortedQueue.value.length - 1)
 
 const recommendedStrategy = computed(() => {
-  const highCount = threads.value.filter((t) => t.priority === "high").length
-  if (highCount >= 2) return "urgent"
   const maxWait = Math.max(...threads.value.map((t) => parseWait(t.wait)))
   if (maxWait >= 120) return "waiting"
   return "quick"
@@ -505,29 +492,6 @@ watch(activeId, (val) => {
   -webkit-box-orient: vertical;
 }
 
-.preview-badge {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 5px;
-  text-transform: capitalize;
-  flex-shrink: 0;
-}
-
-.preview-badge--high {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.preview-badge--medium {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-}
-
-.preview-badge--low {
-  background: rgba(52, 211, 153, 0.1);
-  color: #6ee7b7;
-}
 
 /* ── Strategy bar ─────────────────────────────────────── */
 
@@ -766,29 +730,6 @@ watch(activeId, (val) => {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
-}
-
-.qcard-priority {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 5px;
-  text-transform: capitalize;
-}
-
-.qcard-priority--high {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.qcard-priority--medium {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-}
-
-.qcard-priority--low {
-  background: rgba(52, 211, 153, 0.1);
-  color: #6ee7b7;
 }
 
 /* ── Intermediate screens (tablets / small laptops) ────── */

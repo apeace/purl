@@ -131,9 +131,6 @@
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ item.wait }}
               </span>
-              <span class="qcard-priority" :class="`qcard-priority--${item.priority}`">
-                {{ item.priority }}
-              </span>
             </div>
           </button>
         </div>
@@ -206,7 +203,7 @@ const { boards } = storeToRefs(kanbanStore)
 const { addCardToBoard, addColumn, changeColumnColor, deleteColumn, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
 const ticketStore = useTicketStore()
 const { filterKeyword, tickets } = storeToRefs(ticketStore)
-const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = ticketStore
+const { filterAssignees, filterStatuses, resolveTicket } = ticketStore
 
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)
@@ -281,7 +278,6 @@ const stages = computed(() => {
       let items = tickets.value.filter((t) => assignedIds.includes(t.id))
       const kw = filterKeyword.value.trim().toLowerCase()
       if (kw) items = items.filter((t) => t.subject.toLowerCase().includes(kw) || (t.messages[0]?.text ?? "").toLowerCase().includes(kw))
-      if (filterPriorities.size) items = items.filter((t) => filterPriorities.has(t.priority))
       if (filterAssignees.size) items = items.filter((t) => filterAssignees.has(t.assignee))
       if (q) items = items.filter((t) => matchesSearch(t, q))
       return {
@@ -294,7 +290,6 @@ const stages = computed(() => {
           name: t.name,
           company: t.company,
           subject: t.subject,
-          priority: t.priority,
           avatarColor: t.avatarColor,
         })),
       }
@@ -931,34 +926,6 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
-}
-
-.qcard-priority {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 5px;
-  text-transform: capitalize;
-}
-
-.qcard-priority--urgent {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.qcard-priority--high {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.qcard-priority--medium {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-}
-
-.qcard-priority--low {
-  background: rgba(52, 211, 153, 0.1);
-  color: #6ee7b7;
 }
 
 /* ── Board / Stage picker (inline in KanbanPage) ─────────── */

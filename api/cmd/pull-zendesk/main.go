@@ -20,7 +20,6 @@ type ZendeskTicket struct {
 	Subject     string    `json:"subject"`
 	Description string    `json:"description"`
 	Status      string    `json:"status"`
-	Priority    *string   `json:"priority"`
 	RequesterID int64     `json:"requester_id"`
 	AssigneeID  *int64    `json:"assignee_id"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -32,12 +31,17 @@ type ZendeskTicketsResponse struct {
 	NextPage *string         `json:"next_page"`
 }
 
+type ZendeskCommentVia struct {
+	Channel string `json:"channel"`
+}
+
 type ZendeskComment struct {
-	ID        int64     `json:"id"`
-	Body      string    `json:"body"`
-	AuthorID  int64     `json:"author_id"`
-	Public    bool      `json:"public"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64             `json:"id"`
+	Body      string            `json:"body"`
+	AuthorID  int64             `json:"author_id"`
+	Public    bool              `json:"public"`
+	Via       ZendeskCommentVia `json:"via"`
+	CreatedAt time.Time         `json:"created_at"`
 }
 
 type ZendeskCommentsResponse struct {
@@ -143,10 +147,10 @@ func main() {
 	for _, u := range allAgents {
 		var agentID string
 		err := db.QueryRow(
-			`INSERT INTO agents (email, name, org_id) VALUES ($1, $2, $3)
-			 ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+			`INSERT INTO agents (email, name, org_id, zendesk_user_id) VALUES ($1, $2, $3, $4)
+			 ON CONFLICT (org_id, email) DO UPDATE SET name = EXCLUDED.name, zendesk_user_id = EXCLUDED.zendesk_user_id
 			 RETURNING id`,
-			u.Email, u.Name, orgID,
+			u.Email, u.Name, orgID, u.ID,
 		).Scan(&agentID)
 		if err != nil {
 			log.Fatalf("insert agent %s: %v", u.Email, err)
@@ -218,8 +222,8 @@ func main() {
 			}
 			var customerID string
 			err := db.QueryRow(
-				`INSERT INTO customers (name, org_id) VALUES ($1, $2) RETURNING id`,
-				u.Name, orgID,
+				`INSERT INTO customers (name, org_id, zendesk_user_id) VALUES ($1, $2, $3) RETURNING id`,
+				u.Name, orgID, u.ID,
 			).Scan(&customerID)
 			if err != nil {
 				log.Fatalf("insert customer %s: %v", u.Email, err)
@@ -240,9 +244,6 @@ func main() {
 	ticketsByZendeskID := make(map[int64]string) // zendeskTicketID -> purl ticket UUID
 
 	for _, ticket := range ticketsResp.Tickets {
-		status := mapStatus(ticket.Status)
-		priority := mapPriority(ticket.Priority)
-
 		reporterID, ok := customersByZendeskID[ticket.RequesterID]
 		if !ok {
 			log.Printf("warn: skipping ticket %d — requester %d not found in customers map", ticket.ID, ticket.RequesterID)
@@ -258,19 +259,18 @@ func main() {
 
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8, $9, $10::zendesk_status_category)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status, zendesk_ticket_id)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::zendesk_status_category, $9)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
-			status,
-			priority,
 			reporterID,
 			assigneeID,
 			orgID,
 			ticket.CreatedAt,
 			ticket.UpdatedAt,
 			mapZendeskStatusCategory(ticket.Status),
+			ticket.ID,
 		).Scan(&ticketID)
 		if err != nil {
 			log.Fatalf("insert ticket %d: %v", ticket.ID, err)
@@ -304,9 +304,9 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $6)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body, c.CreatedAt,
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8)`,
+				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
 			)
 			if err != nil {
 				log.Fatalf("insert comment %d: %v", c.ID, err)
@@ -410,6 +410,24 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 	return all, nil
 }
 
+// mapCommentChannel maps a Zendesk via.channel value and public flag to our comment_channel enum.
+// Private comments (public=false) are always internal notes regardless of channel.
+func mapCommentChannel(viaChannel string, public bool) string {
+	if !public {
+		return "internal"
+	}
+	switch viaChannel {
+	case "email":
+		return "email"
+	case "sms", "native_messaging", "whatsapp":
+		return "sms"
+	case "voice", "phone":
+		return "voice"
+	default:
+		return "web"
+	}
+}
+
 // mapZendeskStatusCategory maps a Zendesk ticket status to the zendesk_status_category
 // enum, which mirrors Zendesk's status categories. "hold" is not a category of its own;
 // Zendesk places it under "pending".
@@ -421,36 +439,5 @@ func mapZendeskStatusCategory(s string) string {
 		return "pending"
 	default:
 		return "open"
-	}
-}
-
-func mapStatus(s string) string {
-	switch s {
-	case "new", "open":
-		return "open"
-	case "pending", "hold":
-		return "in_progress"
-	case "solved":
-		return "resolved"
-	case "closed":
-		return "closed"
-	default:
-		return "open"
-	}
-}
-
-func mapPriority(p *string) string {
-	if p == nil {
-		return "medium"
-	}
-	switch *p {
-	case "low":
-		return "low"
-	case "high":
-		return "high"
-	case "urgent":
-		return "urgent"
-	default:
-		return "medium"
 	}
 }

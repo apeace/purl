@@ -1,10 +1,3 @@
-export const PRIORITY_COLORS: Record<string, string> = {
-  urgent: "#ef4444",
-  high: "#f97316",
-  medium: "#f59e0b",
-  low: "#34d399",
-}
-
 export const STATUS_COLORS: Record<string, string> = {
   new: "#38bdf8",
   open: "#60a5fa",
@@ -23,13 +16,6 @@ export const STATUS_PILL: Record<string, { bg: string; text: string }> = Object.
     return [k, { bg: `rgba(${r}, ${g}, ${b}, 0.12)`, text: hex }]
   })
 )
-
-export const PRIORITY_LIST = [
-  { value: "urgent", label: "Urgent", color: PRIORITY_COLORS.urgent },
-  { value: "high", label: "High", color: PRIORITY_COLORS.high },
-  { value: "medium", label: "Medium", color: PRIORITY_COLORS.medium },
-  { value: "low", label: "Low", color: PRIORITY_COLORS.low },
-]
 
 export const STATUS_LIST = [
   { value: "new", label: "New", color: STATUS_COLORS.new },

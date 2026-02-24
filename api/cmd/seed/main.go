@@ -86,13 +86,7 @@ var zendeskStatuses = []string{
 	"closed",
 }
 
-// Weighted toward medium.
-var priorities = []string{
-	"low",
-	"medium", "medium", "medium",
-	"high",
-	"urgent",
-}
+var commentChannels = []string{"email", "email", "email", "web", "web", "sms", "internal"}
 
 var customerCommentBodies = []string{
 	"Still experiencing this issue. Please advise.",
@@ -121,21 +115,6 @@ var agentCommentBodies = []string{
 }
 
 func pick(s []string) string { return s[rand.Intn(len(s))] }
-
-func mapStatus(zendeskStatus string) string {
-	switch zendeskStatus {
-	case "new", "open":
-		return "open"
-	case "pending":
-		return "in_progress"
-	case "solved":
-		return "resolved"
-	case "closed":
-		return "closed"
-	default:
-		return "open"
-	}
-}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -233,9 +212,9 @@ func main() {
 	}
 	log.Printf("inserted %d agents", len(agentIDs))
 
-	// Tickets
+	// Tickets — fake zendesk_ticket_ids start at 100001 to avoid collisions with real IDs
 	ticketIDs := make([]string, 0, 50)
-	for range 50 {
+	for i := range 50 {
 		reporterID := customerIDs[rand.Intn(len(customerIDs))]
 
 		// ~30% of tickets are unassigned
@@ -248,17 +227,16 @@ func main() {
 		zendeskStatus := pick(zendeskStatuses)
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, zendesk_status)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8::zendesk_status_category)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, zendesk_status, zendesk_ticket_id)
+			 VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7)
 			 RETURNING id`,
 			pick(titles),
 			pick(descriptions),
-			mapStatus(zendeskStatus),
-			pick(priorities),
 			reporterID,
 			assigneeID,
 			orgID,
 			zendeskStatus,
+			100001+i,
 		).Scan(&id)
 		if err != nil {
 			log.Fatalf("insert ticket: %v", err)
@@ -293,10 +271,20 @@ func main() {
 				body = pick(agentCommentBodies)
 			}
 
+			channel := pick(commentChannels)
+			// Internal notes are agent-only; force agent role for them
+			if channel == "internal" {
+				customerAuthorID = nil
+				id := agentIDs[rand.Intn(len(agentIDs))]
+				agentAuthorID = &id
+				role = "agent"
+				body = pick(agentCommentBodies)
+			}
+
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body)
-				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
-				ticketID, customerAuthorID, agentAuthorID, role, body,
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel)`,
+				ticketID, customerAuthorID, agentAuthorID, role, body, channel,
 			)
 			if err != nil {
 				log.Fatalf("insert comment: %v", err)

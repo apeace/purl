@@ -18,7 +18,6 @@
       </div>
       <div class="thread-badges">
         <span class="badge" :class="`badge--${ticket.status}`">{{ ticket.status }}</span>
-        <span class="badge" :class="`badge--${ticket.priority}`">{{ ticket.priority }}</span>
       </div>
     </div>
 
@@ -47,7 +46,8 @@
             :class="{
               'message--agent': msg.from === 'agent',
               'message--customer': msg.from === 'customer',
-              'message--system': msg.from === 'system'
+              'message--system': msg.from === 'system',
+              'message--internal': msg.channel === 'internal'
             }"
           >
             <div v-if="msg.from === 'customer'" class="msg-avatar" :style="{ background: ticket.avatarColor }">
@@ -57,11 +57,13 @@
               <div class="msg-header">
                 <span class="msg-sender">{{ msg.from === 'agent' ? 'You' : ticket.name }}</span>
                 <span class="msg-channel" :class="`msg-channel--${msg.channel}`">
-                  <MessageCircle v-if="msg.channel === 'chat'" :size="10" />
+                  <Lock v-if="msg.channel === 'internal'" :size="10" />
+                  <MessageCircle v-else-if="msg.channel === 'chat'" :size="10" />
                   <Mail v-else-if="msg.channel === 'email'" :size="10" />
                   <MessageSquare v-else-if="msg.channel === 'sms'" :size="10" />
-                  <Phone v-else-if="msg.channel === 'phone'" :size="10" />
-                  {{ msg.channel }}
+                  <Phone v-else-if="msg.channel === 'phone' || msg.channel === 'voice'" :size="10" />
+                  <Globe v-else-if="msg.channel === 'web'" :size="10" />
+                  {{ msg.channel === 'voice' ? 'phone' : msg.channel }}
                 </span>
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
@@ -614,7 +616,7 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
@@ -633,7 +635,7 @@ const emit = defineEmits<{
 
 const ticketStore = useTicketStore()
 const { tickets } = storeToRefs(ticketStore)
-const { addTag, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
+const { addTag, loadComments, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
 
 const aiStore = useAiStore()
 const { suggestions: aiSuggestions } = storeToRefs(aiStore)
@@ -703,6 +705,9 @@ const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
+
+// Load comments whenever the displayed ticket changes
+watch(() => props.ticketId, (id) => { loadComments(id) }, { immediate: true })
 
 const activeChannel = computed(() => {
   if (replyChannel.value) return replyChannel.value
@@ -1378,7 +1383,10 @@ onBeforeUnmount(() => {
 .msg-channel--chat { background: rgba(56, 189, 248, 0.1); color: #7dd3fc; }
 .msg-channel--email { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; }
 .msg-channel--sms { background: rgba(52, 211, 153, 0.1); color: #6ee7b7; }
-.msg-channel--phone { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+.msg-channel--phone,
+.msg-channel--voice { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
+.msg-channel--web { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+.msg-channel--internal { background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
 
 /* ── Tab panels (shared) ───────────────────────────────── */
 
@@ -1844,6 +1852,20 @@ onBeforeUnmount(() => {
 .message--agent .msg-bubble {
   background: rgba(99, 102, 241, 0.1);
   border-color: rgba(99, 102, 241, 0.2);
+}
+
+/* Internal notes span the full width with an amber tint */
+.message--internal {
+  flex-direction: row;
+  align-self: stretch;
+}
+
+.message--internal .msg-bubble {
+  max-width: 100%;
+  width: 100%;
+  background: rgba(251, 191, 36, 0.05);
+  border-color: rgba(251, 191, 36, 0.2);
+  border-left: 3px solid rgba(251, 191, 36, 0.5);
 }
 
 .msg-header {

@@ -27,14 +27,14 @@
 
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">Tickets by Priority</span>
+          <span class="panel-title">Tickets by Status</span>
           <span class="panel-link">View inbox</span>
         </div>
         <div
-          v-for="(row, i) in priorityBreakdown"
+          v-for="(row, i) in statusBreakdown"
           :key="row.label"
           class="bar-row"
-          :class="{ 'bar-row--last': i === priorityBreakdown.length - 1 }"
+          :class="{ 'bar-row--last': i === statusBreakdown.length - 1 }"
         >
           <div class="bar-row-top">
             <div class="bar-label-wrap">
@@ -114,7 +114,7 @@ import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
 import StatCard from "../components/StatCard.vue"
 import { useTicketStore } from "../stores/useTicketStore"
-import { PRIORITY_COLORS } from "../utils/colors"
+import { STATUS_COLORS } from "../utils/colors"
 
 const { hudOpen, hudResolvedToday, tickets } = storeToRefs(useTicketStore())
 
@@ -132,19 +132,22 @@ const openChange = computed(() => {
   return -Math.round(((current + 4 - current) / (current + 4)) * 100)
 })
 
-const priorityBreakdown = computed(() => {
-  const open = tickets.value.filter((t) => t.status !== "closed" && t.status !== "solved")
-  const total = open.length || 1
-  const counts: Record<string, number> = { urgent: 0, high: 0, medium: 0, low: 0 }
-  for (const t of open) {
-    if (counts[t.priority] !== undefined) counts[t.priority]++
+const statusBreakdown = computed(() => {
+  const active = tickets.value.filter((t) => t.status !== "closed")
+  const total = active.length || 1
+  const statuses = ["new", "open", "pending", "escalated", "solved"] as const
+  const counts: Record<string, number> = Object.fromEntries(statuses.map((s) => [s, 0]))
+  for (const t of active) {
+    if (counts[t.status] !== undefined) counts[t.status]++
   }
-  return [
-    { label: "Urgent", count: counts.urgent, pct: Math.round((counts.urgent / total) * 100), color: PRIORITY_COLORS.urgent },
-    { label: "High", count: counts.high, pct: Math.round((counts.high / total) * 100), color: PRIORITY_COLORS.high },
-    { label: "Medium", count: counts.medium, pct: Math.round((counts.medium / total) * 100), color: PRIORITY_COLORS.medium },
-    { label: "Low", count: counts.low, pct: Math.round((counts.low / total) * 100), color: PRIORITY_COLORS.low },
-  ]
+  return statuses
+    .filter((s) => counts[s] > 0)
+    .map((s) => ({
+      label: s.charAt(0).toUpperCase() + s.slice(1),
+      count: counts[s],
+      pct: Math.round((counts[s] / total) * 100),
+      color: STATUS_COLORS[s] ?? "#94a3b8",
+    }))
 })
 
 const teamStats = [

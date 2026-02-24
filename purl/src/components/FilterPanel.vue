@@ -33,23 +33,6 @@
           </div>
         </div>
 
-        <!-- Priority -->
-        <div class="filter-section">
-          <div class="filter-label">Priority</div>
-          <div class="chip-row">
-            <button
-              v-for="p in priorities"
-              :key="p"
-              class="chip"
-              :class="[
-                `chip--${p}`,
-                { 'chip--on': filterPriorities.has(p) },
-              ]"
-              @click="toggleSet(filterPriorities, p)"
-            >{{ p }}</button>
-          </div>
-        </div>
-
         <!-- Assignee -->
         <div v-if="uniqueAssignees.length" class="filter-section">
           <div class="filter-label">Member</div>
@@ -106,9 +89,8 @@ const props = withDefaults(defineProps<{
 
 const ticketStore = useTicketStore()
 const { activeFilterCount, filterKeyword, uniqueAssignees } = storeToRefs(ticketStore)
-const { clearFilters, filterAssignees, filterPriorities, filterStatuses } = ticketStore
+const { clearFilters, filterAssignees, filterStatuses } = ticketStore
 
-const priorities = ["low", "medium", "high", "urgent"]
 const defaultStatuses = ["new", "open", "pending", "escalated", "solved", "closed"]
 const statusItems = computed(() => {
   if (props.customStages?.length) {
@@ -332,31 +314,6 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
   color: #e2e8f0;
-}
-
-/* Priority chip active states */
-.chip--low.chip--on {
-  background: rgba(52, 211, 153, 0.12);
-  border-color: rgba(52, 211, 153, 0.25);
-  color: #6ee7b7;
-}
-
-.chip--medium.chip--on {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.25);
-  color: #fcd34d;
-}
-
-.chip--high.chip--on {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-}
-
-.chip--urgent.chip--on {
-  background: rgba(239, 68, 68, 0.15);
-  border-color: rgba(239, 68, 68, 0.3);
-  color: #fca5a5;
 }
 
 /* Member chip active */

@@ -36,34 +36,6 @@
           </button>
 
           <!-- Filter chips -->
-          <div class="chip-wrap" ref="priorityWrapEl">
-            <button
-              class="chip"
-              :class="{ 'chip--active': filterPriorities.size }"
-              @click="openDropdown = openDropdown === 'priority' ? null : 'priority'"
-            >
-              <span class="chip-dot" style="background: #f59e0b" />
-              <span class="chip-text">Priority</span>
-              <span v-if="filterPriorities.size" class="chip-count">{{ filterPriorities.size }}</span>
-              <ChevronDown :size="12" class="chip-chevron" />
-            </button>
-            <Transition name="drop">
-              <div v-if="openDropdown === 'priority'" class="dropdown">
-                <button
-                  v-for="p in priorities"
-                  :key="p.value"
-                  class="dropdown-item"
-                  :class="{ 'dropdown-item--on': filterPriorities.has(p.value) }"
-                  @click="toggleSet(filterPriorities, p.value)"
-                >
-                  <span class="filter-dot" :style="{ background: p.color }" />
-                  <span>{{ p.label }}</span>
-                  <span v-if="filterPriorities.has(p.value)" class="check-mark">&#10003;</span>
-                </button>
-              </div>
-            </Transition>
-          </div>
-
           <div class="chip-wrap" ref="statusWrapEl">
             <button
               class="chip"
@@ -186,14 +158,6 @@
             </button>
           </div>
 
-          <!-- Priority dot -->
-          <span
-            class="priority-dot"
-            :class="{ 'priority-dot--glow': email.priority === 'urgent' }"
-            :style="{ background: priorityColors[email.priority] }"
-            :title="email.priority"
-          />
-
           <!-- Sender -->
           <div class="row-sender">
             <div class="sender-avatar" :style="{ background: email.sender.color }">
@@ -292,9 +256,6 @@
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ item.wait }}
               </span>
-              <span class="qcard-priority" :class="`qcard-priority--${item.priority}`">
-                {{ item.priority }}
-              </span>
             </div>
           </button>
         </div>
@@ -311,28 +272,26 @@ import InboxTabs from "../components/InboxTabs.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { avatarColor, useTicketStore } from "../stores/useTicketStore"
 import { useUserStore } from "../stores/useUserStore"
-import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors"
+import { STATUS_LIST, STATUS_PILL } from "../utils/colors"
 
 const ticketStore = useTicketStore()
 const { sortBy, sortedTickets, uniqueAssignees } = storeToRefs(ticketStore)
-const { archiveTicket, deleteTicket, filterAssignees, filterPriorities, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
+const { archiveTicket, deleteTicket, filterAssignees, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
 const { CURRENT_USER } = useUserStore()
 
 const activeTab = ref("all")
 
 // ── Filter / sort data ───────────────────────────────────
 
-const priorities = PRIORITY_LIST
 const statuses = STATUS_LIST
 
 const sortOptions = [
   { value: "time", label: "Last Updated" },
-  { value: "priority", label: "Priority" },
   { value: "status", label: "Status" },
   { value: "assignee", label: "Assignee" },
 ]
 
-const sortLabels: Record<string, string> = { time: "Last Updated", priority: "Priority", status: "Status", assignee: "Assignee" }
+const sortLabels: Record<string, string> = { time: "Last Updated", status: "Status", assignee: "Assignee" }
 
 function toggleSet(set: Set<string>, val: string) {
   if (set.has(val)) set.delete(val)
@@ -343,14 +302,13 @@ function toggleSet(set: Set<string>, val: string) {
 
 const openDropdown = ref<string | null>(null)
 const toolbarEl = ref<HTMLElement | null>(null)
-const priorityWrapEl = ref<HTMLElement | null>(null)
 const statusWrapEl = ref<HTMLElement | null>(null)
 const assigneeWrapEl = ref<HTMLElement | null>(null)
 const sortWrapEl = ref<HTMLElement | null>(null)
 
 function onPointerDown(e: PointerEvent) {
   if (!openDropdown.value) return
-  const wraps = [priorityWrapEl.value, statusWrapEl.value, assigneeWrapEl.value, sortWrapEl.value]
+  const wraps = [statusWrapEl.value, assigneeWrapEl.value, sortWrapEl.value]
   if (!wraps.some((w) => w?.contains(e.target as Node))) {
     openDropdown.value = null
   }
@@ -375,7 +333,6 @@ onBeforeUnmount(() => {
   document.removeEventListener("keydown", onKeydown)
 })
 
-const priorityColors = PRIORITY_COLORS
 const statusColors = STATUS_PILL
 
 function timeColor(createdAt: string) {
@@ -414,7 +371,6 @@ const emails = computed(() => {
     preview: t.messages[t.messages.length - 1]?.text ?? "",
     labels: t.labels,
     time: t.time,
-    priority: t.priority,
     status: t.status,
     assignee: t.assignee,
     assigneeColor: t.assignee !== "Unassigned" ? avatarColor(t.assignee) : undefined,
@@ -810,21 +766,6 @@ function refresh() {
 
 .star-btn--on {
   color: #f59e0b;
-}
-
-/* ── Row: priority dot ───────────────────────────────────── */
-
-.priority-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  margin-right: 10px;
-  transition: box-shadow 0.15s;
-}
-
-.priority-dot--glow {
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
 }
 
 /* ── Row: sender ─────────────────────────────────────────── */
@@ -1244,34 +1185,6 @@ function refresh() {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
-}
-
-.qcard-priority {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 8px;
-  border-radius: 5px;
-  text-transform: capitalize;
-}
-
-.qcard-priority--urgent {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.qcard-priority--high {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.qcard-priority--medium {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-}
-
-.qcard-priority--low {
-  background: rgba(52, 211, 153, 0.1);
-  color: #6ee7b7;
 }
 
 /* ── Intermediate screens ────────────────────────────────── */

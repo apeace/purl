@@ -91,9 +91,6 @@
             </div>
           </div>
           <div class="card-subject">{{ item.subject }}</div>
-          <div v-if="item.priority" class="card-footer">
-            <span class="card-priority" :class="`card-priority--${item.priority}`">{{ item.priority }}</span>
-          </div>
         </div>
       </div>
       <div class="drop-placeholder" :class="{ 'drop-placeholder--active': draggingId && !isSource && dragOver && dropIndex >= items.length }" />
@@ -111,7 +108,6 @@ interface KanbanItem {
   name: string
   company: string
   subject: string
-  priority: string
   avatarColor: string
 }
 
@@ -169,7 +165,7 @@ function onDragStart(event: DragEvent, id: string) {
 }
 
 function onDragOver(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   if (!stageCardsEl.value || !props.draggingId || isSource.value) return
   const slots = stageCardsEl.value.querySelectorAll(".card-slot")
   let index = slots.length
@@ -184,13 +180,13 @@ function onDragOver(event: DragEvent) {
 }
 
 function onDragEnter(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount++
   dragOver.value = true
 }
 
 function onDragLeave(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount--
   if (enterCount <= 0) {
     enterCount = 0
@@ -199,7 +195,7 @@ function onDragLeave(event: DragEvent) {
 }
 
 function onDrop(event: DragEvent) {
-  if (!isCardDrag(event)) return
+  if (!isCardDrag(event) || !props.canEdit) return
   enterCount = 0
   dragOver.value = false
   dropIndex.value = -1
@@ -511,34 +507,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-.card-footer {
-  display: flex;
-  align-items: center;
-  margin-top: 8px;
-}
-
-.card-priority {
-  font-size: 10px;
-  font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 5px;
-  text-transform: capitalize;
-}
-
-.card-priority--high {
-  background: rgba(239, 68, 68, 0.1);
-  color: #fca5a5;
-}
-
-.card-priority--medium {
-  background: rgba(245, 158, 11, 0.1);
-  color: #fcd34d;
-}
-
-.card-priority--low {
-  background: rgba(52, 211, 153, 0.1);
-  color: #6ee7b7;
-}
 </style>
 
 <style>

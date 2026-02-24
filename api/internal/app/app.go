@@ -33,6 +33,7 @@ func (a *App) Handler() http.Handler {
 	})
 	r.Get("/docs/*", httpSwagger.Handler())
 	r.Get("/health", a.health)
+	r.Post("/webhooks/zendesk/{orgSlug}", a.handleZendeskWebhook)
 	r.Options("/*", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -48,6 +49,7 @@ func (a *App) Handler() http.Handler {
 		r.Put("/kanbans/{boardID}/columns/{columnID}/tickets", a.putColumnTickets)
 		r.Get("/org", a.getOrg)
 		r.Get("/tickets", a.listTickets)
+		r.Get("/tickets/{ticketID}/comments", a.listTicketComments)
 	})
 
 	return r
