@@ -18,6 +18,7 @@ type ticketRow struct {
 }
 
 // @Summary     List tickets
+// @Tags        Tickets
 // @Description Returns all tickets for the org, ordered by creation date descending
 // @Produce     json
 // @Success     200  {array}   ticketRow

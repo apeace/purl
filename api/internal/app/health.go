@@ -6,6 +6,7 @@ import (
 )
 
 // @Summary     Health check
+// @Tags        System
 // @Description Returns health status of the API and its dependencies
 // @Produce     json
 // @Success     200  {object}  map[string]any

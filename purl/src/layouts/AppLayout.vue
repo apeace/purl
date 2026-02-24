@@ -88,22 +88,13 @@
           </RouterLink>
           <div v-if="isKanbanRoute && !collapsed" class="kanban-subnav">
             <RouterLink
-              to="/kanban"
-              class="subnav-item"
-              :class="{ 'subnav-item--active': route.path === '/kanban' }"
-              @click="onNavClick('/kanban')"
-            >
-              <span class="subnav-dot" style="background: #60a5fa" />
-              <span>Service Flow</span>
-            </RouterLink>
-            <RouterLink
               v-for="board in boards"
               :key="board.id"
-              :to="`/kanban/${board.id}`"
+              :to="board.isDefault ? '/kanban' : `/kanban/${board.id}`"
               class="subnav-item"
-              :class="{ 'subnav-item--active': route.params.boardId === board.id }"
-              @click="onNavClick(`/kanban/${board.id}`)"
-              @contextmenu.prevent="openContextMenu($event, board.id)"
+              :class="{ 'subnav-item--active': board.isDefault ? route.path === '/kanban' : route.params.boardId === board.id }"
+              @click="onNavClick(board.isDefault ? '/kanban' : `/kanban/${board.id}`)"
+              @contextmenu.prevent="!board.isDefault && openContextMenu($event, board.id)"
               @dragover.prevent="onBoardDragOver($event, board.id)"
               @dragleave="onBoardDragLeave(board.id)"
               @drop="onBoardDrop($event, board.id)"
@@ -227,20 +218,23 @@
 
 <script setup lang="ts">
 import { BarChart3, ChevronRight, Inbox, LayoutDashboard, Menu, Plus, Search, Settings, Workflow, X, Zap } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import BoardContextMenu from "../components/BoardContextMenu.vue"
 import CreateBoardModal from "../components/CreateBoardModal.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
-import { useKanbanBoards } from "../composables/useKanbanBoards"
-import type { BoardStage } from "../composables/useKanbanBoards"
+import { useKanbanStore } from "../stores/useKanbanStore"
+import type { BoardStage } from "../stores/useKanbanStore"
 
 const open = ref(false)
 const collapsed = ref(false)
 const cmdOpen = ref(false)
 const cmdInput = ref<HTMLInputElement | null>(null)
 
-const { addCardToBoard, boards, deleteBoard, renameBoard } = useKanbanBoards()
+const kanbanStore = useKanbanStore()
+const { boards } = storeToRefs(kanbanStore)
+const { addCardToBoard, deleteBoard, renameBoard } = kanbanStore
 
 const navBefore = [
   { path: "/go", label: "Go", icon: Zap },

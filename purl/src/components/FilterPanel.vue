@@ -94,8 +94,9 @@
 
 <script setup lang="ts">
 import { Search, SlidersHorizontal, X } from "lucide-vue-next"
+import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { useTickets } from "../composables/useTickets"
+import { useTicketStore } from "../stores/useTicketStore"
 
 const props = withDefaults(defineProps<{
   customStages?: { id: string; name: string; color: string }[]
@@ -103,15 +104,9 @@ const props = withDefaults(defineProps<{
   customStages: undefined,
 })
 
-const {
-  activeFilterCount,
-  clearFilters,
-  filterAssignees,
-  filterKeyword,
-  filterPriorities,
-  filterStatuses,
-  uniqueAssignees,
-} = useTickets()
+const ticketStore = useTicketStore()
+const { activeFilterCount, filterKeyword, uniqueAssignees } = storeToRefs(ticketStore)
+const { clearFilters, filterAssignees, filterPriorities, filterStatuses } = ticketStore
 
 const priorities = ["low", "medium", "high", "urgent"]
 const defaultStatuses = ["new", "open", "pending", "escalated", "solved", "closed"]
