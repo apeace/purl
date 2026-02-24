@@ -155,12 +155,12 @@ import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
+import { useAiStore } from "../stores/useAiStore"
 import { parseWait, useTicketStore } from "../stores/useTicketStore"
 import type { Ticket } from "../stores/useTicketStore"
 
 const ticketStore = useTicketStore()
 const {
-  aiSuggestions,
   hudLongestWait,
   hudOpen,
   hudResolvedToday,
@@ -168,6 +168,9 @@ const {
   resolvedToday,
 } = storeToRefs(ticketStore)
 const { resolveTicket } = ticketStore
+
+const aiStore = useAiStore()
+const { suggestions: aiSuggestions } = storeToRefs(aiStore)
 
 const DAILY_GOAL = 20
 

@@ -310,11 +310,13 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { avatarColor, useTicketStore } from "../stores/useTicketStore"
+import { useUserStore } from "../stores/useUserStore"
 import { PRIORITY_COLORS, PRIORITY_LIST, STATUS_LIST, STATUS_PILL } from "../utils/colors"
 
 const ticketStore = useTicketStore()
 const { sortBy, sortedTickets, uniqueAssignees } = storeToRefs(ticketStore)
-const { archiveTicket, CURRENT_USER, deleteTicket, filterAssignees, filterPriorities, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
+const { archiveTicket, deleteTicket, filterAssignees, filterPriorities, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
+const { CURRENT_USER } = useUserStore()
 
 const activeTab = ref("all")
 

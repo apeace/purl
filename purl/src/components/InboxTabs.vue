@@ -20,6 +20,7 @@ import { Inbox, Star, User, UserX } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed } from "vue"
 import { useTicketStore } from "../stores/useTicketStore"
+import { useUserStore } from "../stores/useUserStore"
 
 withDefaults(defineProps<{
   modelValue?: string
@@ -33,7 +34,7 @@ defineEmits<{
 
 const ticketStore = useTicketStore()
 const { tickets } = storeToRefs(ticketStore)
-const { CURRENT_USER } = ticketStore
+const { CURRENT_USER } = useUserStore()
 
 const tabs = computed(() => [
   {

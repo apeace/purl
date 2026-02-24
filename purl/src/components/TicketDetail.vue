@@ -617,6 +617,7 @@
 import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, History, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
+import { useAiStore } from "../stores/useAiStore"
 import { useTicketStore } from "../stores/useTicketStore"
 import type { Message } from "../stores/useTicketStore"
 
@@ -631,8 +632,11 @@ const emit = defineEmits<{
 }>()
 
 const ticketStore = useTicketStore()
-const { aiSuggestions, tickets } = storeToRefs(ticketStore)
+const { tickets } = storeToRefs(ticketStore)
 const { addTag, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
+
+const aiStore = useAiStore()
+const { suggestions: aiSuggestions } = storeToRefs(aiStore)
 
 const activeTab = ref("comms")
 const composeCollapsed = ref(true)
