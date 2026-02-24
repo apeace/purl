@@ -15,7 +15,7 @@
             <X :size="12" />
           </button>
         </div>
-        <FilterPanel :custom-stages="isCustomBoard && currentBoard ? currentBoard.stages : undefined" />
+        <FilterPanel :custom-stages="currentBoard?.stages" />
       </div>
     </div>
     <div class="stages-scroll">
@@ -137,15 +137,14 @@ import TicketDetail from "../components/TicketDetail.vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
 import type { BoardStage } from "../stores/useKanbanStore"
 import { useTicketStore } from "../stores/useTicketStore"
-import { STATUS_COLORS } from "../utils/colors"
 
 const route = useRoute()
 const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
 const { addCardToBoard, getBoardById, moveCard } = kanbanStore
 const ticketStore = useTicketStore()
-const { filteredTickets, filterKeyword, tickets } = storeToRefs(ticketStore)
-const { filterAssignees, filterPriorities, filterStatuses, resolveTicket, setStatus } = ticketStore
+const { filterKeyword, tickets } = storeToRefs(ticketStore)
+const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = ticketStore
 
 const selectedTicketId = ref<string | null>(null)
 const draggingId = ref<string | null>(null)
@@ -154,13 +153,11 @@ const searchQuery = ref("")
 // ── Board awareness ──────────────────────────────────────
 
 const boardId = computed(() => (route.params.boardId as string) ?? null)
-const isCustomBoard = computed(() => !!boardId.value)
-const currentBoard = computed(() => boardId.value ? getBoardById(boardId.value) : null)
+const currentBoard = computed(() =>
+  boardId.value ? getBoardById(boardId.value) : (boards.value.find((b) => b.isDefault) ?? null)
+)
 
-const pageTitle = computed(() => {
-  if (isCustomBoard.value && currentBoard.value) return currentBoard.value.name
-  return "Kanban"
-})
+const pageTitle = computed(() => currentBoard.value?.name ?? "Kanban")
 
 // Reset state on board switch
 watch(boardId, () => {
@@ -169,28 +166,15 @@ watch(boardId, () => {
   filterStatuses.clear()
 })
 
-// ── Service Flow stage definitions ───────────────────────
-
-const serviceFlowDefs = [
-  { status: "new", title: "New", color: STATUS_COLORS.new },
-  { status: "open", title: "Open", color: STATUS_COLORS.open },
-  { status: "pending", title: "Pending", color: STATUS_COLORS.pending },
-  { status: "escalated", title: "Technical Escalation", color: STATUS_COLORS.escalated },
-  { status: "solved", title: "Solved", color: STATUS_COLORS.solved },
-  { status: "closed", title: "Closed", color: STATUS_COLORS.closed },
-]
-
-// ── Stage definitions (computed based on board) ──────────
+// ── Stage definitions ────────────────────────────────────
 
 const stageDefs = computed(() => {
-  if (isCustomBoard.value && currentBoard.value) {
-    return currentBoard.value.stages.map((s) => ({
-      status: s.id,
-      title: s.name,
-      color: s.color,
-    }))
-  }
-  return serviceFlowDefs
+  if (!currentBoard.value) return []
+  return currentBoard.value.stages.map((s) => ({
+    status: s.id,
+    title: s.name,
+    color: s.color,
+  }))
 })
 
 // ── Search helper ────────────────────────────────────────
@@ -207,20 +191,17 @@ function matchesSearch(t: { name: string; company: string; subject: string; mess
 // ── Stages computed ──────────────────────────────────────
 
 const stages = computed(() => {
+  if (!currentBoard.value) return []
+  const board = currentBoard.value
   const q = searchQuery.value.trim().toLowerCase()
-
-  if (isCustomBoard.value && currentBoard.value) {
-    const board = currentBoard.value
-    // When stage filters are active, only show matching stages
-    const stageFilter = filterStatuses.size > 0
-    return stageDefs.value
-      .filter((def) => !stageFilter || filterStatuses.has(def.status))
-      .map((def) => {
+  const stageFilter = filterStatuses.size > 0
+  return stageDefs.value
+    .filter((def) => !stageFilter || filterStatuses.has(def.status))
+    .map((def) => {
       const assignedIds = Object.entries(board.cardAssignments)
         .filter(([, stageId]) => stageId === def.status)
         .map(([ticketId]) => ticketId)
       let items = tickets.value.filter((t) => assignedIds.includes(t.id))
-      // Apply shared filters (keyword, priority, assignee)
       const kw = filterKeyword.value.trim().toLowerCase()
       if (kw) items = items.filter((t) => t.subject.toLowerCase().includes(kw) || (t.messages[0]?.text ?? "").toLowerCase().includes(kw))
       if (filterPriorities.size) items = items.filter((t) => filterPriorities.has(t.priority))
@@ -241,73 +222,34 @@ const stages = computed(() => {
         })),
       }
     })
-  }
-
-  // Service Flow: filter by ticket status
-  return stageDefs.value.map((def) => {
-    let items = filteredTickets.value.filter((t) => t.status === def.status)
-    if (q) items = items.filter((t) => matchesSearch(t, q))
-    return {
-      title: def.title,
-      count: items.length,
-      color: def.color,
-      status: def.status,
-      items: items.map((t) => ({
-        id: t.id,
-        name: t.name,
-        company: t.company,
-        subject: t.subject,
-        priority: t.priority,
-        avatarColor: t.avatarColor,
-      })),
-    }
-  })
 })
 
 // ── Drop handler ─────────────────────────────────────────
 
 function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
   draggingId.value = null
-  if (isCustomBoard.value && boardId.value) {
-    moveCard(boardId.value, ticketId, status)
-  } else {
-    setStatus(ticketId, status)
-  }
+  if (!currentBoard.value) return
+  moveCard(currentBoard.value.id, ticketId, status)
 }
 
 // ── Split view state ─────────────────────────────────────
 
 const selectedStage = computed(() => {
-  if (!selectedTicketId.value) return null
-  if (isCustomBoard.value && currentBoard.value) {
-    const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
-    const def = stageDefs.value.find((s) => s.status === stageId)
-    return def ? { title: def.title, color: def.color } : null
-  }
-  const ticket = filteredTickets.value.find((t) => t.id === selectedTicketId.value)
-  if (!ticket) return null
-  const def = serviceFlowDefs.find((s) => s.status === ticket.status)
+  if (!selectedTicketId.value || !currentBoard.value) return null
+  const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
+  const def = stageDefs.value.find((s) => s.status === stageId)
   return def ? { title: def.title, color: def.color } : null
 })
 
 const stageQueue = computed(() => {
-  if (!selectedTicketId.value) return []
+  if (!selectedTicketId.value || !currentBoard.value) return []
   const q = searchQuery.value.trim().toLowerCase()
-
-  if (isCustomBoard.value && currentBoard.value) {
-    const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
-    if (!stageId) return []
-    const assignedIds = Object.entries(currentBoard.value.cardAssignments)
-      .filter(([, sid]) => sid === stageId)
-      .map(([tid]) => tid)
-    let items = tickets.value.filter((t) => assignedIds.includes(t.id))
-    if (q) items = items.filter((t) => matchesSearch(t, q))
-    return items
-  }
-
-  const ticket = filteredTickets.value.find((t) => t.id === selectedTicketId.value)
-  if (!ticket) return []
-  let items = filteredTickets.value.filter((t) => t.status === ticket.status)
+  const stageId = currentBoard.value.cardAssignments[selectedTicketId.value]
+  if (!stageId) return []
+  const assignedIds = Object.entries(currentBoard.value.cardAssignments)
+    .filter(([, sid]) => sid === stageId)
+    .map(([tid]) => tid)
+  let items = tickets.value.filter((t) => assignedIds.includes(t.id))
   if (q) items = items.filter((t) => matchesSearch(t, q))
   return items
 })
@@ -340,7 +282,7 @@ const stagePickerBoardName = ref("")
 const stagePickerStages = ref<BoardStage[]>([])
 const stagePickerBoardId = ref<string | null>(null)
 
-const availableBoards = computed(() => boards.value)
+const availableBoards = computed(() => boards.value.filter((b) => !b.isDefault))
 
 function handleAddToBoard(ticketId: string) {
   addToBoardTicketId.value = ticketId

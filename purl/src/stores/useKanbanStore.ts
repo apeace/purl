@@ -21,6 +21,7 @@ export interface BoardStage {
 
 export interface KanbanBoard {
   id: string
+  isDefault: boolean
   name: string
   stages: BoardStage[]
   cardAssignments: Record<string, string> // ticketId → stageId
@@ -31,6 +32,7 @@ export interface KanbanBoard {
 function toKanbanBoard(apiBoard: AppKanbanBoard): KanbanBoard {
   return {
     id: apiBoard.id ?? "",
+    isDefault: apiBoard.is_default ?? false,
     name: apiBoard.name ?? "",
     stages: (apiBoard.columns ?? [])
       .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
@@ -60,8 +62,7 @@ export const useKanbanStore = defineStore("kanban", () => {
   async function loadBoards() {
     const { data } = await getKanbans()
     if (!data) return
-    // The default board is the built-in Service Flow; exclude it from custom boards
-    boards.value = data.filter((b) => !b.is_default).map(toKanbanBoard)
+    boards.value = data.map(toKanbanBoard)
     await Promise.all(boards.value.map((b) => loadBoardTickets(b.id)))
   }
 
@@ -78,6 +79,7 @@ export const useKanbanStore = defineStore("kanban", () => {
 
     const board: KanbanBoard = {
       id: created.id,
+      isDefault: false,
       name: created.name ?? name,
       stages: (columns ?? []).map((c) => ({
         color: c.color ?? "#94a3b8",

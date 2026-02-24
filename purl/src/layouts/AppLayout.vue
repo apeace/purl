@@ -88,22 +88,13 @@
           </RouterLink>
           <div v-if="isKanbanRoute && !collapsed" class="kanban-subnav">
             <RouterLink
-              to="/kanban"
-              class="subnav-item"
-              :class="{ 'subnav-item--active': route.path === '/kanban' }"
-              @click="onNavClick('/kanban')"
-            >
-              <span class="subnav-dot" style="background: #60a5fa" />
-              <span>Service Flow</span>
-            </RouterLink>
-            <RouterLink
               v-for="board in boards"
               :key="board.id"
-              :to="`/kanban/${board.id}`"
+              :to="board.isDefault ? '/kanban' : `/kanban/${board.id}`"
               class="subnav-item"
-              :class="{ 'subnav-item--active': route.params.boardId === board.id }"
-              @click="onNavClick(`/kanban/${board.id}`)"
-              @contextmenu.prevent="openContextMenu($event, board.id)"
+              :class="{ 'subnav-item--active': board.isDefault ? route.path === '/kanban' : route.params.boardId === board.id }"
+              @click="onNavClick(board.isDefault ? '/kanban' : `/kanban/${board.id}`)"
+              @contextmenu.prevent="!board.isDefault && openContextMenu($event, board.id)"
               @dragover.prevent="onBoardDragOver($event, board.id)"
               @dragleave="onBoardDragLeave(board.id)"
               @drop="onBoardDrop($event, board.id)"
