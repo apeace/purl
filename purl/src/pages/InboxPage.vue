@@ -876,11 +876,6 @@ function refresh() {
   white-space: nowrap;
 }
 
-.label--urgent {
-  background: rgba(239, 68, 68, 0.12);
-  color: #fca5a5;
-}
-
 .label--bug {
   background: rgba(245, 158, 11, 0.12);
   color: #fcd34d;

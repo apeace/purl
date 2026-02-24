@@ -26,6 +26,8 @@
         <ActivityRow name="James Kim" action="Merged duplicate tickets #E1A0, #E1A3" time="2h ago" color="#ec4899" :delay="900" />
       </div>
 
+      <!-- TODO: Restore "Tickets by Priority" panel once priority system is in place -->
+      <!--
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title">Tickets by Status</span>
@@ -55,6 +57,7 @@
           </div>
         </div>
       </div>
+      -->
 
       <div class="panel">
         <div class="panel-header">
