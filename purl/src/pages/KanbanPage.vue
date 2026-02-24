@@ -55,12 +55,32 @@
         @column-drag-start="columnDraggingId = $event"
         @column-drag-end="columnDraggingId = null; columnDropIndex = -1"
         @rename="onColumnRename"
+        @delete="onColumnDelete"
       />
       <div
         v-if="columnDropIndex >= 0 && columnDropX !== null"
         class="col-drop-indicator"
         :style="{ left: `${columnDropX}px` }"
       />
+
+      <!-- Add column -->
+      <template v-if="canEditBoard">
+        <div v-if="addingColumn" class="add-column-form">
+          <input
+            ref="newColumnInputRef"
+            v-model="newColumnName"
+            class="add-column-input"
+            placeholder="Column name…"
+            @blur="commitAddColumn"
+            @keydown.enter.prevent="commitAddColumn"
+            @keydown.escape="cancelAddColumn"
+          />
+        </div>
+        <button v-else class="add-column-btn" @click="startAddColumn">
+          <Plus :size="14" />
+          <span>Add column</span>
+        </button>
+      </template>
     </div>
     </template>
 
@@ -157,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, Clock, Search, X } from "lucide-vue-next"
+import { ChevronLeft, ChevronRight, Clock, Plus, Search, X } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute } from "vue-router"
@@ -172,7 +192,7 @@ import { useTicketStore } from "../stores/useTicketStore"
 const route = useRoute()
 const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
-const { addCardToBoard, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
+const { addCardToBoard, addColumn, deleteColumn, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
 const ticketStore = useTicketStore()
 const { filterKeyword, tickets } = storeToRefs(ticketStore)
 const { filterAssignees, filterPriorities, filterStatuses, resolveTicket } = ticketStore
@@ -278,11 +298,51 @@ function onDrop({ ticketId, status }: { ticketId: string; status: string }) {
   moveCard(currentBoard.value.id, ticketId, status)
 }
 
-// ── Column rename ────────────────────────────────────────
+// ── Column rename / delete ───────────────────────────────
 
 function onColumnRename(stageId: string, name: string) {
   if (!currentBoard.value) return
   renameColumn(currentBoard.value.id, stageId, name)
+}
+
+function onColumnDelete(stageId: string) {
+  if (!currentBoard.value) return
+  deleteColumn(currentBoard.value.id, stageId)
+}
+
+// ── Add column ───────────────────────────────────────────
+
+const COLUMN_PALETTE = [
+  "#38bdf8", "#6366f1", "#a855f7", "#ec4899",
+  "#f97316", "#f59e0b", "#34d399", "#60a5fa",
+  "#ef4444", "#14b8a6", "#84cc16", "#94a3b8",
+]
+
+const addingColumn = ref(false)
+const newColumnName = ref("")
+const newColumnInputRef = ref<HTMLInputElement | null>(null)
+
+function nextColumnColor(): string {
+  if (!currentBoard.value) return COLUMN_PALETTE[0]
+  const used = new Set(currentBoard.value.stages.map((s) => s.color))
+  return COLUMN_PALETTE.find((c) => !used.has(c)) ?? COLUMN_PALETTE[currentBoard.value.stages.length % COLUMN_PALETTE.length]
+}
+
+function startAddColumn() {
+  addingColumn.value = true
+  newColumnName.value = ""
+  nextTick(() => newColumnInputRef.value?.focus())
+}
+
+function commitAddColumn() {
+  const name = newColumnName.value.trim()
+  addingColumn.value = false
+  if (!name || !currentBoard.value) return
+  addColumn(currentBoard.value.id, name, nextColumnColor())
+}
+
+function cancelAddColumn() {
+  addingColumn.value = false
 }
 
 // ── Column drag-and-drop reorder ─────────────────────────
@@ -580,6 +640,52 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
 .stage--col-dragging {
   opacity: 0.35;
   transition: opacity 0.15s;
+}
+
+.add-column-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.4);
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.add-column-btn:hover {
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.add-column-form {
+  flex-shrink: 0;
+  align-self: flex-start;
+  min-width: 180px;
+}
+
+.add-column-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(99, 102, 241, 0.45);
+  border-radius: 10px;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.add-column-input::placeholder {
+  color: rgba(148, 163, 184, 0.3);
 }
 
 .col-drop-indicator {

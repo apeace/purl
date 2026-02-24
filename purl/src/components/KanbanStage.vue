@@ -23,7 +23,26 @@
       </template>
       <span v-else class="stage-title" @click="startEditTitle">{{ title }}</span>
       <span class="stage-count">{{ count }}</span>
+      <button v-if="canEdit" class="col-menu-btn" @click.stop="openMenu">
+        <MoreHorizontal :size="13" />
+      </button>
     </div>
+
+    <!-- Column context menu (teleported to avoid clipping) -->
+    <Teleport to="body">
+      <div v-if="menuVisible" class="col-ctx-backdrop" @click="menuVisible = false">
+        <div class="col-ctx-menu" :style="{ top: `${menuY}px`, left: `${menuX}px` }" @click.stop>
+          <button class="col-ctx-item" @click="onMenuRename">
+            <Pencil :size="13" />
+            <span>Rename</span>
+          </button>
+          <button class="col-ctx-item col-ctx-item--danger" @click="onMenuDelete">
+            <Trash2 :size="13" />
+            <span>Delete</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
     <div
       ref="stageCardsEl"
       class="stage-cards"
@@ -69,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { GripVertical } from "lucide-vue-next"
+import { GripVertical, MoreHorizontal, Pencil, Trash2 } from "lucide-vue-next"
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 
 interface KanbanItem {
@@ -103,6 +122,7 @@ const emit = defineEmits<{
   columnDragStart: [stageId: string]
   columnDragEnd: []
   rename: [stageId: string, name: string]
+  delete: [stageId: string]
 }>()
 
 const visible = ref(false)
@@ -112,6 +132,9 @@ const stageCardsEl = ref<HTMLElement | null>(null)
 const editingTitle = ref(false)
 const editValue = ref("")
 const titleInputRef = ref<HTMLInputElement | null>(null)
+const menuVisible = ref(false)
+const menuX = ref(0)
+const menuY = ref(0)
 // Counter prevents false dragleave when entering child elements
 let enterCount = 0
 
@@ -191,6 +214,22 @@ function commitTitle() {
 
 function cancelTitle() {
   editingTitle.value = false
+}
+
+function openMenu(event: MouseEvent) {
+  menuX.value = event.clientX
+  menuY.value = event.clientY
+  menuVisible.value = true
+}
+
+function onMenuRename() {
+  menuVisible.value = false
+  startEditTitle()
+}
+
+function onMenuDelete() {
+  menuVisible.value = false
+  emit("delete", props.status)
 }
 
 // Reset drag state when dragging ends (covers Escape/cancel and cross-column cleanup)
@@ -293,6 +332,32 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 6px;
   padding: 2px 7px;
+}
+
+.col-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(148, 163, 184, 0.4);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s, color 0.12s;
+}
+
+.stage-header:hover .col-menu-btn {
+  opacity: 1;
+}
+
+.col-menu-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
 }
 
 .stage-cards {
@@ -449,5 +514,55 @@ onMounted(() => {
 .card-priority--low {
   background: rgba(52, 211, 153, 0.1);
   color: #6ee7b7;
+}
+</style>
+
+<style>
+.col-ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+}
+
+.col-ctx-menu {
+  position: fixed;
+  min-width: 148px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 4px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: colCtxPop 0.12s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes colCtxPop {
+  from { opacity: 0; transform: scale(0.95); }
+}
+
+.col-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+
+.col-ctx-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.col-ctx-item--danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
 }
 </style>
