@@ -548,14 +548,13 @@ func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
 }
 
 type kanbanTicketRow struct {
-	ColumnID     string    `json:"column_id"`
-	Position     int       `json:"position"`
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Status       string    `json:"status"`
-	Priority     string    `json:"priority"`
-	ReporterName string    `json:"reporter_name"`
-	CreatedAt    time.Time `json:"created_at"`
+	ColumnID      string    `json:"column_id"`
+	Position      int       `json:"position"`
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	ZendeskStatus *string   `json:"zendesk_status"`
+	ReporterName  string    `json:"reporter_name"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // @Summary     List tickets on a Kanban board
@@ -590,7 +589,7 @@ func (a *App) listKanbanTickets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT kbt.column_id, kbt.position, t.id, t.title, t.status, t.priority, c.name, t.created_at
+		SELECT kbt.column_id, kbt.position, t.id, t.title, t.zendesk_status, c.name, t.created_at
 		FROM board_tickets kbt
 		JOIN tickets t ON t.id = kbt.ticket_id
 		JOIN customers c ON c.id = t.reporter_id
@@ -607,7 +606,7 @@ func (a *App) listKanbanTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []kanbanTicketRow{}
 	for rows.Next() {
 		var t kanbanTicketRow
-		if err := rows.Scan(&t.ColumnID, &t.Position, &t.ID, &t.Title, &t.Status, &t.Priority, &t.ReporterName, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ColumnID, &t.Position, &t.ID, &t.Title, &t.ZendeskStatus, &t.ReporterName, &t.CreatedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listKanbanTickets scan: %v", err)
 			return

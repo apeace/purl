@@ -25,7 +25,6 @@ export interface Ticket {
   company: string
   ticketId: string
   subject: string
-  priority: string
   createdAt: string
   wait: string
   avatarColor: string
@@ -48,7 +47,6 @@ export interface Ticket {
 
 // ── Module-level helpers (exported for direct import at call sites) ──
 
-const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, medium: 2, low: 3 }
 const STATUS_ORDER: Record<string, number> = { escalated: 0, new: 1, open: 2, pending: 3, solved: 4, closed: 5 }
 
 const AVATAR_COLORS = [
@@ -96,11 +94,10 @@ function toTicket(t: AppTicketRow): Ticket {
     company: "",
     ticketId: `#${id.slice(0, 6).toUpperCase()}`,
     subject: t.title ?? "",
-    priority: t.priority ?? "",
     createdAt,
     wait: formatWait(createdAt),
     avatarColor: avatarColor(reporterName),
-    status: t.status ?? "",
+    status: t.zendesk_status ?? "",
     read: false,
     starred: false,
     labels: [],
@@ -135,7 +132,6 @@ export const useTicketStore = defineStore("tickets", () => {
   // ── Filters ─────────────────────────────────────────────
 
   const filterKeyword = ref("")
-  const filterPriorities = reactive(new Set<string>())
   const filterAssignees = reactive(new Set<string>())
   const filterStatuses = reactive(new Set<string>())
 
@@ -150,9 +146,6 @@ export const useTicketStore = defineStore("tickets", () => {
       })
     }
 
-    if (filterPriorities.size) {
-      result = result.filter((t) => filterPriorities.has(t.priority))
-    }
     if (filterAssignees.size) {
       result = result.filter((t) => filterAssignees.has(t.assignee))
     }
@@ -166,7 +159,6 @@ export const useTicketStore = defineStore("tickets", () => {
   const activeFilterCount = computed(() => {
     let n = 0
     if (filterKeyword.value.trim()) n++
-    if (filterPriorities.size) n++
     if (filterAssignees.size) n++
     if (filterStatuses.size) n++
     return n
@@ -178,7 +170,6 @@ export const useTicketStore = defineStore("tickets", () => {
 
   function clearFilters() {
     filterKeyword.value = ""
-    filterPriorities.clear()
     filterAssignees.clear()
     filterStatuses.clear()
   }
@@ -189,9 +180,7 @@ export const useTicketStore = defineStore("tickets", () => {
 
   const sortedTickets = computed(() => {
     const list = [...filteredTickets.value]
-    if (sortBy.value === "priority") {
-      list.sort((a, b) => (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9))
-    } else if (sortBy.value === "status") {
+    if (sortBy.value === "status") {
       list.sort((a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9))
     } else if (sortBy.value === "assignee") {
       list.sort((a, b) => a.assignee.localeCompare(b.assignee))
@@ -335,7 +324,6 @@ export const useTicketStore = defineStore("tickets", () => {
     deleteTicket,
     filterAssignees,
     filterKeyword,
-    filterPriorities,
     filterStatuses,
     filteredTickets,
     hudLongestWait,

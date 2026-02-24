@@ -18,7 +18,6 @@
       </div>
       <div class="thread-badges">
         <span class="badge" :class="`badge--${ticket.status}`">{{ ticket.status }}</span>
-        <span class="badge" :class="`badge--${ticket.priority}`">{{ ticket.priority }}</span>
       </div>
     </div>
 

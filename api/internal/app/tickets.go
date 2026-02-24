@@ -8,13 +8,12 @@ import (
 )
 
 type ticketRow struct {
-	ID           string    `json:"id"`
-	Title        string    `json:"title"`
-	Description  string    `json:"description"`
-	Status       string    `json:"status"`
-	Priority     string    `json:"priority"`
-	ReporterName string    `json:"reporter_name"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Title         string    `json:"title"`
+	Description   string    `json:"description"`
+	ZendeskStatus *string   `json:"zendesk_status"`
+	ReporterName  string    `json:"reporter_name"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // @Summary     List tickets
@@ -28,7 +27,7 @@ type ticketRow struct {
 func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT t.id, t.title, t.description, t.status, t.priority, c.name, t.created_at
+		SELECT t.id, t.title, t.description, t.zendesk_status, c.name, t.created_at
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
 		WHERE t.org_id = $1
@@ -44,7 +43,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.Status, &t.Priority, &t.ReporterName, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ReporterName, &t.CreatedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return

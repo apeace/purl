@@ -86,14 +86,6 @@ var zendeskStatuses = []string{
 	"closed",
 }
 
-// Weighted toward medium.
-var priorities = []string{
-	"low",
-	"medium", "medium", "medium",
-	"high",
-	"urgent",
-}
-
 var customerCommentBodies = []string{
 	"Still experiencing this issue. Please advise.",
 	"I rebooted the modem again — no change.",
@@ -121,21 +113,6 @@ var agentCommentBodies = []string{
 }
 
 func pick(s []string) string { return s[rand.Intn(len(s))] }
-
-func mapStatus(zendeskStatus string) string {
-	switch zendeskStatus {
-	case "new", "open":
-		return "open"
-	case "pending":
-		return "in_progress"
-	case "solved":
-		return "resolved"
-	case "closed":
-		return "closed"
-	default:
-		return "open"
-	}
-}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -248,13 +225,11 @@ func main() {
 		zendeskStatus := pick(zendeskStatuses)
 		var id string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, status, priority, reporter_id, assignee_id, org_id, zendesk_status)
-			 VALUES ($1, $2, $3::ticket_status, $4::ticket_priority, $5, $6, $7, $8::zendesk_status_category)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, zendesk_status)
+			 VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category)
 			 RETURNING id`,
 			pick(titles),
 			pick(descriptions),
-			mapStatus(zendeskStatus),
-			pick(priorities),
 			reporterID,
 			assigneeID,
 			orgID,
@@ -294,7 +269,7 @@ func main() {
 			}
 
 			_, err := db.Exec(
-				`INSERT INTO comments (ticket_id, customer_author_id, agent_author_id, role, body)
+				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body)
 				 VALUES ($1, $2, $3, $4::comment_role, $5)`,
 				ticketID, customerAuthorID, agentAuthorID, role, body,
 			)
