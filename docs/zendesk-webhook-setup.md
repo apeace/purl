@@ -36,12 +36,10 @@ SELECT zendesk_webhook_secret FROM organizations WHERE slug = 'your-org-slug';
    | **Endpoint URL** | `https://<your-purl-host>/webhooks/zendesk/<org-slug>` |
    | **Request method** | POST |
    | **Request format** | JSON |
-   | **Authentication** | None |
+   | **Authentication** | Bearer Token |
+   | **Token** | _(paste the `zendesk_webhook_secret` value for this org)_ |
 
-4. Under **Signing**, enable **Sign webhook** and copy the generated signing
-   secret into your org row (`zendesk_webhook_secret`). Alternatively, use the
-   value Purl generated at org creation time and paste it into the Zendesk form.
-5. Click **Create webhook**
+4. Click **Create webhook**
 
 ---
 
@@ -72,8 +70,8 @@ and add the following event types:
 2. Choose any event type and click **Send test**
 3. Purl responds with `204 No Content` on success
 
-If you receive a `401 Unauthorized`, the signing secret does not match what is
-stored in the database.
+If you receive a `401 Unauthorized`, the bearer token does not match the
+`zendesk_webhook_secret` stored in the database.
 
 ---
 
@@ -114,17 +112,16 @@ stored in the database.
 
 ---
 
-## Signature verification
+## Authentication
 
-Zendesk signs every request with HMAC-SHA256:
+Zendesk sends the `zendesk_webhook_secret` as a bearer token on every request:
 
 ```
-Signature = base64( HMAC-SHA256( signing_secret, timestamp + body ) )
+Authorization: Bearer <zendesk_webhook_secret>
 ```
 
-The signature is in the `X-Zendesk-Webhook-Signature` header; the timestamp is
-in `X-Zendesk-Webhook-Signature-Timestamp`. Purl rejects any request where the
-computed signature does not match.
+Purl rejects any request where the token is missing or does not match the value
+stored in the database for that org.
 
 ---
 

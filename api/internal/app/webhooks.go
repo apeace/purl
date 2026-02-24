@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -11,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -107,12 +106,11 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify HMAC-SHA256 signature.
-	// Zendesk signs: HMAC-SHA256(signing_secret, timestamp + body), base64-encoded.
-	timestamp := r.Header.Get("X-Zendesk-Webhook-Signature-Timestamp")
-	signature := r.Header.Get("X-Zendesk-Webhook-Signature")
-	if !verifyZendeskSignature(webhookSecret, timestamp, body, signature) {
-		http.Error(w, "invalid signature", http.StatusUnauthorized)
+	// Verify bearer token. Zendesk is configured to send the webhook secret
+	// as "Authorization: Bearer <secret>".
+	auth := r.Header.Get("Authorization")
+	if !strings.HasPrefix(auth, "Bearer ") || auth[len("Bearer "):] != webhookSecret {
+		http.Error(w, "invalid authorization", http.StatusUnauthorized)
 		return
 	}
 
@@ -618,20 +616,6 @@ func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUser
 		return nil, fmt.Errorf("parse user: %w", err)
 	}
 	return &wrapper.User, nil
-}
-
-// verifyZendeskSignature validates the HMAC-SHA256 signature Zendesk attaches to
-// every webhook request. The signed message is the timestamp concatenated with the
-// raw request body; the key is the per-org signing secret.
-func verifyZendeskSignature(secret, timestamp string, body []byte, signature string) bool {
-	if secret == "" || timestamp == "" || signature == "" {
-		return false
-	}
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(timestamp))
-	mac.Write(body)
-	expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
 }
 
 // mapZendeskStatus maps a raw Zendesk ticket status string to our
