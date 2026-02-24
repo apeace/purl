@@ -168,7 +168,7 @@ func main() {
 	}
 	log.Printf("seeding into org %s (id: %s)", slug, orgID)
 
-	// Wipe existing data. Deleting tickets cascades to comments and kanban_board_tickets.
+	// Wipe existing data. Deleting tickets cascades to comments and board_tickets.
 	// Deleting customers cascades to customer_emails and customer_phones.
 	if _, err := db.Exec(`DELETE FROM tickets WHERE org_id = $1`, orgID); err != nil {
 		log.Fatalf("wipe tickets: %v", err)
@@ -321,7 +321,7 @@ func main() {
 	}
 
 	result, err := db.Exec(`
-		INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+		INSERT INTO board_tickets (board_id, column_id, ticket_id, position)
 		SELECT
 			$1,
 			bc.id,

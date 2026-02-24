@@ -317,7 +317,7 @@ func main() {
 	log.Printf("inserted %d comments", commentsInserted)
 
 	// Step 8: Place tickets into the default Kanban board columns by zendesk_status.
-	// Deleting tickets in Step 0 cascades to kanban_board_tickets, so we start fresh.
+	// Deleting tickets in Step 0 cascades to board_tickets, so we start fresh.
 	log.Println("placing tickets into default Kanban board...")
 
 	var defaultBoardID string
@@ -361,7 +361,7 @@ func main() {
 	// Insert all tickets into their matching column in one query.
 	// Position within each column is assigned by created_at ASC (oldest = top of queue).
 	result, err := db.Exec(`
-		INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+		INSERT INTO board_tickets (board_id, column_id, ticket_id, position)
 		SELECT
 			$1,
 			bc.id,

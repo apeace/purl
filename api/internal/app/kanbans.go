@@ -495,7 +495,7 @@ func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
 	// Remove all tickets currently in this column. Tickets being moved here
 	// from another column are handled per-ticket below.
 	if _, err := tx.ExecContext(r.Context(),
-		`DELETE FROM kanban_board_tickets WHERE column_id = $1`, columnID,
+		`DELETE FROM board_tickets WHERE column_id = $1`, columnID,
 	); err != nil {
 		http.Error(w, "delete failed", http.StatusInternalServerError)
 		log.Printf("putColumnTickets clear column: %v", err)
@@ -505,7 +505,7 @@ func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
 	for i, tid := range ticketIDs {
 		// If this ticket is in another column on this board, remove it from there first
 		if _, err := tx.ExecContext(r.Context(),
-			`DELETE FROM kanban_board_tickets WHERE board_id = $1 AND ticket_id = $2`,
+			`DELETE FROM board_tickets WHERE board_id = $1 AND ticket_id = $2`,
 			boardID, tid,
 		); err != nil {
 			http.Error(w, "delete failed", http.StatusInternalServerError)
@@ -514,7 +514,7 @@ func (a *App) putColumnTickets(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if _, err := tx.ExecContext(r.Context(), `
-			INSERT INTO kanban_board_tickets (board_id, column_id, ticket_id, position)
+			INSERT INTO board_tickets (board_id, column_id, ticket_id, position)
 			VALUES ($1, $2, $3, $4)
 		`, boardID, columnID, tid, i); err != nil {
 			http.Error(w, "insert failed", http.StatusInternalServerError)
@@ -577,7 +577,7 @@ func (a *App) listKanbanTickets(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := a.db.QueryContext(r.Context(), `
 		SELECT kbt.column_id, kbt.position, t.id, t.title, t.status, t.priority, c.name, t.created_at
-		FROM kanban_board_tickets kbt
+		FROM board_tickets kbt
 		JOIN tickets t ON t.id = kbt.ticket_id
 		JOIN customers c ON c.id = t.reporter_id
 		WHERE kbt.board_id = $1
