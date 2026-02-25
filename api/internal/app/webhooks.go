@@ -299,7 +299,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 		return fmt.Errorf("ticket %d: reporter %d not found and could not be fetched", d.ID, d.RequesterID)
 	}
 
-	// Resolve optional assignee agent.
+	// Resolve optional assignee agent. If not in the DB, try the Zendesk API.
 	var assigneeID *string
 	if d.AssigneeID != nil {
 		var agentID string
@@ -308,8 +308,20 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 			orgID, *d.AssigneeID,
 		).Scan(&agentID); err == nil {
 			assigneeID = &agentID
+		} else {
+			fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, *d.AssigneeID)
+			if fetchErr != nil {
+				return fmt.Errorf("fetch assignee %d: %w", *d.AssigneeID, fetchErr)
+			}
+			if fetched != nil && fetched.Role != "end-user" {
+				id, upsertErr := upsertAgent(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
+				if upsertErr != nil {
+					return fmt.Errorf("upsert assignee agent: %w", upsertErr)
+				}
+				assigneeID = &id
+			}
+			// If credentials aren't configured or user isn't an agent, leave assignee_id NULL.
 		}
-		// Unknown assignee is non-fatal; leave assignee_id NULL.
 	}
 
 	// Capture old zendesk_status so we can detect changes for kanban sync.
