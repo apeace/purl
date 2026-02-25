@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd:*)",
+      "Bash(chmod +x:*)",
+      "Bash(git add:*)",
+      "Bash(go build:*)",
+      "Bash(go version:*)",
+      "Bash(go vet:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(ls:*)",
+      "Bash(npm run:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:swagger.io)",
+      "WebSearch",
+      "mcp__ide__getDiagnostics"
+    ]
+  }
+}
