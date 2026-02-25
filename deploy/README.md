@@ -62,7 +62,8 @@ This script handles the chicken-and-egg problem: nginx needs certs to start, but
 ### 5. Start the full stack
 
 ```sh
-docker compose -f /home/ubuntu/purl/deploy/docker-compose.prod.yml up -d
+cd /home/ubuntu/purl/deploy
+./d.sh up -d
 ```
 
 ### 6. Add the cert-reload cron job
@@ -70,12 +71,14 @@ docker compose -f /home/ubuntu/purl/deploy/docker-compose.prod.yml up -d
 Certbot renews certificates automatically every 12 hours, but nginx must be reloaded to pick them up. Add this to the crontab (`crontab -e`):
 
 ```
-0 6 * * * docker compose -f /home/ubuntu/purl/deploy/docker-compose.prod.yml exec nginx nginx -s reload
+0 6 * * * /home/ubuntu/purl/deploy/d.sh exec nginx nginx -s reload
 ```
 
 ---
 
 ## Deploying Updates
+
+All commands run from `/home/ubuntu/purl/deploy` on the server. `d.sh` is a thin wrapper around `docker compose -f docker-compose.prod.yml`.
 
 Rebuild and restart only the changed service without downtime to others:
 
@@ -83,61 +86,63 @@ Rebuild and restart only the changed service without downtime to others:
 cd /home/ubuntu/purl
 git pull
 
+cd deploy
+
 # Redeploy the API:
-docker compose -f deploy/docker-compose.prod.yml up -d --build api
+./d.sh up -d --build api
 
 # Redeploy the frontend (rebuilds the nginx image):
-docker compose -f deploy/docker-compose.prod.yml up -d --build nginx
+./d.sh up -d --build nginx
 ```
 
 To rebuild and restart everything:
 
 ```sh
-docker compose -f deploy/docker-compose.prod.yml up -d --build
+./d.sh up -d --build
 ```
 
 ---
 
 ## Common Maintenance
 
-All commands run from `/home/ubuntu/purl` on the server.
+All commands run from `/home/ubuntu/purl/deploy` on the server.
 
 **Check service status:**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml ps
+./d.sh ps
 ```
 
 **View logs:**
 ```sh
 # All services
-docker compose -f deploy/docker-compose.prod.yml logs -f
+./d.sh logs -f
 
 # One service
-docker compose -f deploy/docker-compose.prod.yml logs -f api
+./d.sh logs -f api
 ```
 
 **Restart a service:**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml restart api
+./d.sh restart api
 ```
 
 **Stop everything:**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml down
+./d.sh down
 ```
 
 **Start everything:**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml up -d
+./d.sh up -d
 ```
 
 **Open a psql shell:**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml exec postgres psql -U purl purl
+./d.sh exec postgres psql -U purl purl
 ```
 
 **Force cert renewal (outside the normal schedule):**
 ```sh
-docker compose -f deploy/docker-compose.prod.yml exec certbot certbot renew --force-renewal
-docker compose -f deploy/docker-compose.prod.yml exec nginx nginx -s reload
+./d.sh exec certbot certbot renew --force-renewal
+./d.sh exec nginx nginx -s reload
 ```
