@@ -209,10 +209,16 @@ func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
 	for _, e := range events {
 		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload); err != nil {
 			log.Printf("process-zendesk-webhooks: event %s (%s) failed: %v — will retry", e.id, e.eventType, err)
+			if _, dbErr := db.ExecContext(ctx,
+				`UPDATE zendesk_webhook_events SET last_error = $1 WHERE id = $2`,
+				err.Error(), e.id,
+			); dbErr != nil {
+				log.Printf("process-zendesk-webhooks: record error for event %s: %v", e.id, dbErr)
+			}
 			continue
 		}
 		if _, err := db.ExecContext(ctx,
-			`UPDATE zendesk_webhook_events SET processed_at = now() WHERE id = $1`,
+			`UPDATE zendesk_webhook_events SET processed_at = now(), last_error = NULL WHERE id = $1`,
 			e.id,
 		); err != nil {
 			log.Printf("process-zendesk-webhooks: mark event %s processed: %v", e.id, err)
@@ -290,8 +296,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 		return fmt.Errorf("resolve reporter: %w", err)
 	}
 	if reporterID == "" {
-		log.Printf("process-zendesk-webhooks: ticket %d: reporter %d not found and could not be fetched — skipping", d.ID, d.RequesterID)
-		return nil
+		return fmt.Errorf("ticket %d: reporter %d not found and could not be fetched", d.ID, d.RequesterID)
 	}
 
 	// Resolve optional assignee agent.
