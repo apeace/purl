@@ -1,0 +1,11 @@
+[
+  {
+    "slug": "acme",
+    "name": "Acme Corp",
+    "api_key": "",
+    "zendesk_webhook_secret": "",
+    "zendesk_subdomain": "acme",
+    "zendesk_email": "admin@acme.com",
+    "zendesk_api_key": "xxxx"
+  }
+]

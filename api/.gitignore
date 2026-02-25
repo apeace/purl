@@ -1,4 +1,5 @@
 .env
+clients.json
 # compiled binaries
 api
 server
