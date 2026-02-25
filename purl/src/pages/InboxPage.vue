@@ -180,7 +180,7 @@
               background: statusColors[email.status]?.bg,
               color: statusColors[email.status]?.text,
             }"
-          >{{ statusLabel(email.status) }}</span>
+          >{{ email.status }}</span>
 
           <!-- Labels -->
           <div class="row-labels">

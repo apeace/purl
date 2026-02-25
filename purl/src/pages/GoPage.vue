@@ -21,7 +21,7 @@
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
-                <span class="hud-value">{{ hudResolvedToday }}</span>
+                <span class="hud-value">{{ resolvedToday }}</span>
                 <span class="hud-label">resolved today</span>
               </div>
             </div>
@@ -106,7 +106,7 @@
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
-            <span class="hud-value">{{ hudResolvedToday }}</span>
+            <span class="hud-value">{{ resolvedToday }}</span>
             <span class="hud-label">resolved today</span>
           </div>
         </div>
@@ -185,22 +185,13 @@ const activeThread = computed(() => activeId.value != null ? threads.value.find(
 const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
 const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
 
-const queueDetail = computed(() => {
-  const counts: Record<string, number> = {}
-  for (const t of tickets.value) {
-    if (t.status === "new" || t.status === "open") continue
-    counts[t.status] = (counts[t.status] ?? 0) + 1
-  }
-  return Object.entries(counts).map(([s, n]) => `${n} ${statusLabel(s)}`).join(" · ") || "0 resolved"
-})
-
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
     urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
     waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
-    queue: { stat: `${hudOpen.value} open`, detail: `${hudResolvedToday.value}/${DAILY_GOAL} resolved` },
+    queue: { stat: `${hudOpen.value} open`, detail: `${resolvedToday.value} resolved` },
   }
 })
 

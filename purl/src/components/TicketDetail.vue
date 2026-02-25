@@ -289,7 +289,7 @@
             class="option-btn"
             :class="{ 'option-btn--active': ticket.status === s }"
             @click="setStatus(ticketId, s)"
-          >{{ statusLabel(s) }}</button>
+          >{{ s.replace(/_/g, " ") }}</button>
         </div>
       </div>
     </div>

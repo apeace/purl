@@ -96,7 +96,7 @@ const statusItems = computed(() => {
   if (props.customStages?.length) {
     return props.customStages.map((s) => ({ value: s.id, label: s.name }))
   }
-  return defaultStatuses.map((s) => ({ value: s, label: statusLabel(s) }))
+  return defaultStatuses.map((s) => ({ value: s, label: s.replace(/_/g, " ") }))
 })
 
 const open = ref(false)
