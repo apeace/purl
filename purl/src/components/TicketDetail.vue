@@ -53,21 +53,113 @@
             <div v-if="msg.from === 'customer'" class="msg-avatar" :style="{ background: ticket.avatarColor }">
               {{ ticket.name[0] }}
             </div>
-            <div v-if="msg.type !== 'recording'" class="msg-bubble">
+            <div v-if="msg.type !== 'recording'" class="msg-bubble" :class="{ 'msg-bubble--system': msg.messageType === 'merge_notice' }">
               <div class="msg-header">
-                <span class="msg-sender">{{ msg.from === 'agent' ? 'You' : ticket.name }}</span>
-                <span class="msg-channel" :class="`msg-channel--${msg.channel}`">
-                  <Lock v-if="msg.channel === 'internal'" :size="10" />
-                  <MessageCircle v-else-if="msg.channel === 'chat'" :size="10" />
-                  <Mail v-else-if="msg.channel === 'email'" :size="10" />
-                  <MessageSquare v-else-if="msg.channel === 'sms'" :size="10" />
-                  <Phone v-else-if="msg.channel === 'phone' || msg.channel === 'voice'" :size="10" />
-                  <Globe v-else-if="msg.channel === 'web'" :size="10" />
-                  {{ msg.channel === 'voice' ? 'phone' : msg.channel }}
+                <span class="msg-sender">{{ msg.authorName || (msg.from === 'agent' ? 'You' : ticket.name) }}</span>
+                <span class="msg-channel" :class="`msg-channel--${commChannelCategory(msg)}`">
+                  <Lock v-if="msg.commChannel === 'internal_note'" :size="10" />
+                  <MessageCircle v-else-if="msg.commChannel === 'web_chat'" :size="10" />
+                  <Mail v-else-if="msg.commChannel?.startsWith('email')" :size="10" />
+                  <MessageSquare v-else-if="msg.commChannel === 'sms_inbound'" :size="10" />
+                  <Phone v-else-if="msg.commChannel?.startsWith('call') || msg.commChannel === 'voicemail'" :size="10" />
+                  <Globe v-else-if="msg.commChannel === 'ticket_merge'" :size="10" />
+                  <Globe v-else :size="10" />
+                  {{ commChannelLabel(msg) }}
                 </span>
                 <span class="msg-time">{{ msg.time }}</span>
               </div>
-              <div class="msg-body">{{ msg.text }}</div>
+
+              <!-- Call record card -->
+              <div v-if="msg.call" class="call-card">
+                <div class="call-card-header">
+                  <Phone :size="14" />
+                  <span>{{ msg.messageType === 'call_summary' ? 'Call Log' : msg.call.direction === 'outbound' ? 'Outbound Call' : 'Inbound Call' }}</span>
+                </div>
+                <div class="call-card-fields">
+                  <div v-if="msg.call.customerPhone" class="call-card-field">
+                    <span class="call-card-label">Phone</span>
+                    <span>{{ msg.call.customerPhone }}</span>
+                  </div>
+                  <div v-if="!msg.call.customerPhone && msg.call.callFrom" class="call-card-field">
+                    <span class="call-card-label">From</span>
+                    <span>{{ msg.call.callFrom }}</span>
+                  </div>
+                  <div v-if="!msg.call.customerPhone && msg.call.callTo" class="call-card-field">
+                    <span class="call-card-label">To</span>
+                    <span>{{ msg.call.callTo }}</span>
+                  </div>
+                  <div v-if="msg.call.agentName" class="call-card-field">
+                    <span class="call-card-label">{{ msg.call.direction === 'outbound' ? 'Called by' : 'Answered by' }}</span>
+                    <span>{{ msg.call.agentName }}</span>
+                  </div>
+                  <div v-if="msg.call.duration" class="call-card-field">
+                    <span class="call-card-label">Duration</span>
+                    <span>{{ msg.call.duration }}</span>
+                  </div>
+                  <div v-if="msg.call.timeOfCall" class="call-card-field">
+                    <span class="call-card-label">Time</span>
+                    <span>{{ msg.call.timeOfCall }}</span>
+                  </div>
+                </div>
+                <div v-if="msg.hasRecording" class="call-card-audio">
+                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                </div>
+                <a v-else-if="msg.call.recordingUrl" :href="msg.call.recordingUrl" target="_blank" class="call-card-recording">
+                  <Play :size="12" /> Listen to recording
+                </a>
+                <button v-if="msg.transcript" class="transcript-toggle" @click="toggleTranscript(msg.id)">
+                  <Sparkles :size="13" />
+                  <span>Call Transcript</span>
+                  <ChevronDown :size="14" :class="{ 'chevron-flipped': expandedTranscriptId === msg.id }" />
+                </button>
+                <div v-if="msg.transcript && expandedTranscriptId === msg.id" class="call-card-transcript">
+                  {{ msg.transcript }}
+                </div>
+              </div>
+
+              <!-- Voicemail card -->
+              <div v-else-if="msg.voicemail" class="call-card call-card--voicemail">
+                <div class="call-card-header">
+                  <Phone :size="14" />
+                  <span>Voicemail</span>
+                </div>
+                <div class="call-card-fields">
+                  <div v-if="msg.voicemail.customerPhone" class="call-card-field">
+                    <span class="call-card-label">From</span>
+                    <span>{{ msg.voicemail.customerPhone }}</span>
+                  </div>
+                  <div v-if="msg.voicemail.duration" class="call-card-field">
+                    <span class="call-card-label">Duration</span>
+                    <span>{{ msg.voicemail.duration }}</span>
+                  </div>
+                  <div v-if="msg.voicemail.location" class="call-card-field">
+                    <span class="call-card-label">Location</span>
+                    <span>{{ msg.voicemail.location }}</span>
+                  </div>
+                </div>
+                <div v-if="msg.hasRecording" class="call-card-audio">
+                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                </div>
+                <a v-else-if="msg.voicemail.recordingUrl" :href="msg.voicemail.recordingUrl" target="_blank" class="call-card-recording">
+                  <Play :size="12" /> Listen to voicemail
+                </a>
+                <button v-if="msg.transcript" class="transcript-toggle" @click="toggleTranscript(msg.id)">
+                  <Sparkles :size="13" />
+                  <span>Call Transcript</span>
+                  <ChevronDown :size="14" :class="{ 'chevron-flipped': expandedTranscriptId === msg.id }" />
+                </button>
+                <div v-if="msg.transcript && expandedTranscriptId === msg.id" class="call-card-transcript">
+                  {{ msg.transcript }}
+                </div>
+              </div>
+
+              <!-- Merge notice -->
+              <div v-else-if="msg.messageType === 'merge_notice'" class="msg-body msg-body--merge">
+                {{ msg.text }}
+              </div>
+
+              <!-- Regular message body -->
+              <div v-else class="msg-body" :class="{ 'msg-body--note': msg.commChannel === 'internal_note' }">{{ msg.text }}</div>
             </div>
             <div v-else class="recording-card">
               <div class="recording-header">
@@ -621,8 +713,9 @@ import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarS
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
-import { useTicketStore } from "../stores/useTicketStore"
+import { API_KEY_STORAGE_KEY } from "../utils/api"
 import type { Message } from "../stores/useTicketStore"
+import { useTicketStore } from "../stores/useTicketStore"
 import ComingSoon from "./ComingSoon.vue"
 
 const props = defineProps<{
@@ -707,6 +800,42 @@ const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
+
+function recordingUrl(msg: Message): string {
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
+  const key = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ""
+  return `${base}/tickets/${props.ticketId}/comments/${msg.commentId}/recording?api_key=${encodeURIComponent(key)}`
+}
+
+function commChannelCategory(msg: Message): string {
+  const cc = msg.commChannel
+  if (!cc) return msg.channel
+  if (cc.startsWith("email")) return "email"
+  if (cc.startsWith("call") || cc === "voicemail") return "phone"
+  if (cc === "sms_inbound") return "sms"
+  if (cc === "internal_note") return "internal"
+  if (cc === "web_chat") return "chat"
+  if (cc === "ticket_merge") return "web"
+  return msg.channel
+}
+
+const COMM_CHANNEL_LABELS: Record<string, string> = {
+  email_inbound: "email",
+  email_outbound: "email",
+  sms_inbound: "sms",
+  call_outbound: "call",
+  call_inbound: "call",
+  call_summary: "call",
+  voicemail: "voicemail",
+  web_chat: "chat",
+  internal_note: "internal",
+  ticket_merge: "system",
+}
+
+function commChannelLabel(msg: Message): string {
+  if (msg.commChannel) return COMM_CHANNEL_LABELS[msg.commChannel] ?? msg.channel
+  return msg.channel === "voice" ? "phone" : msg.channel
+}
 
 // Load comments whenever the displayed ticket changes
 watch(() => props.ticketId, (id) => { loadComments(id) }, { immediate: true })
@@ -2660,5 +2789,114 @@ onBeforeUnmount(() => {
 
 .transcript-text {
   color: #cbd5e1;
+}
+
+/* ── Call / voicemail cards ──────────────────────────────── */
+
+.call-card {
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.15);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+
+.call-card--voicemail {
+  background: rgba(168, 85, 247, 0.06);
+  border-color: rgba(168, 85, 247, 0.15);
+}
+
+.call-card-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #a5b4fc;
+  margin-bottom: 8px;
+}
+
+.call-card--voicemail .call-card-header {
+  color: #d8b4fe;
+}
+
+.call-card-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 16px;
+}
+
+.call-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.call-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgba(148, 163, 184, 0.5);
+}
+
+.call-card-recording {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #a5b4fc;
+  font-size: 11px;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.call-card-recording:hover {
+  background: rgba(99, 102, 241, 0.18);
+}
+
+.call-card-audio {
+  margin-top: 8px;
+}
+
+.call-card-player {
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.call-card-transcript {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+/* ── Merge / system notices ─────────────────────────────── */
+
+.msg-bubble--system {
+  background: rgba(255, 255, 255, 0.02) !important;
+  border: 1px dashed rgba(255, 255, 255, 0.08) !important;
+}
+
+.msg-body--merge {
+  font-style: italic;
+  color: rgba(148, 163, 184, 0.6);
+  font-size: 12px;
+}
+
+.msg-body--note {
+  border-left: 2px solid rgba(245, 158, 11, 0.4);
+  padding-left: 10px;
 }
 </style>

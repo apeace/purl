@@ -38,6 +38,9 @@ func (a *App) Handler() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// Recording proxy uses query-param auth so <audio> elements can reference it directly
+	r.Get("/tickets/{ticketID}/comments/{commentID}/recording", a.proxyRecording)
+
 	r.Group(func(r chi.Router) {
 		r.Use(a.requireAPIKey)
 		r.Get("/kanbans", a.listKanbans)

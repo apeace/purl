@@ -368,7 +368,7 @@ const emails = computed(() => {
     starred: t.starred,
     sender: { name: t.name, color: t.avatarColor },
     subject: t.subject,
-    preview: t.messages[t.messages.length - 1]?.text ?? "",
+    preview: t.messages[t.messages.length - 1]?.text || t.description || "",
     labels: t.labels,
     time: t.time,
     status: t.status,

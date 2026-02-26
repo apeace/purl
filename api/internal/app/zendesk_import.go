@@ -33,13 +33,54 @@ type ZendeskCommentVia struct {
 	Channel string `json:"channel"`
 }
 
+// zendeskVoiceData captures the structured fields Zendesk returns in the "data"
+// object of VoiceComment-type comments. All fields are pointers because they're
+// only present on voice comments (and some are conditional even then).
+type zendeskVoiceData struct {
+	CallID              *int64     `json:"call_id"`
+	RecordingURL        *string    `json:"recording_url"`
+	TranscriptionText   *string    `json:"transcription_text"`
+	TranscriptionStatus *string    `json:"transcription_status"`
+	CallDuration        *int       `json:"call_duration"`
+	From                *string    `json:"from"`
+	To                  *string    `json:"to"`
+	FormattedFrom       *string    `json:"formatted_from"`
+	FormattedTo         *string    `json:"formatted_to"`
+	AnsweredByID        *int64     `json:"answered_by_id"`
+	AnsweredByName      *string    `json:"answered_by_name"`
+	Location            *string    `json:"location"`
+	StartedAt           *time.Time `json:"started_at"`
+}
+
+func (d *zendeskVoiceData) callFrom() *string {
+	if d == nil {
+		return nil
+	}
+	if d.FormattedFrom != nil {
+		return d.FormattedFrom
+	}
+	return d.From
+}
+
+func (d *zendeskVoiceData) callTo() *string {
+	if d == nil {
+		return nil
+	}
+	if d.FormattedTo != nil {
+		return d.FormattedTo
+	}
+	return d.To
+}
+
 type ZendeskComment struct {
-	ID        int64             `json:"id"`
-	Body      string            `json:"body"`
-	AuthorID  int64             `json:"author_id"`
-	Public    bool              `json:"public"`
-	Via       ZendeskCommentVia `json:"via"`
-	CreatedAt time.Time         `json:"created_at"`
+	ID        int64              `json:"id"`
+	Type      string             `json:"type"`
+	Body      string             `json:"body"`
+	AuthorID  int64              `json:"author_id"`
+	Public    bool               `json:"public"`
+	Via       ZendeskCommentVia  `json:"via"`
+	CreatedAt time.Time          `json:"created_at"`
+	Data      *zendeskVoiceData  `json:"data"`
 }
 
 type ZendeskCommentsResponse struct {
@@ -58,7 +99,7 @@ type ZendeskUsersResponse struct {
 	NextPage *string       `json:"next_page"`
 }
 
-func zendeskGet(subdomain, creds, path string) ([]byte, error) {
+func ZendeskGet(subdomain, creds, path string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s.zendesk.com%s", subdomain, path)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -89,7 +130,7 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
 
 	for path != "" {
-		body, err := zendeskGet(subdomain, creds, path)
+		body, err := ZendeskGet(subdomain, creds, path)
 		if err != nil {
 			return nil, err
 		}
@@ -146,7 +187,8 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 	}
 	log.Printf("fetched %d agents", len(allAgents))
 
-	agentsByZendeskID := make(map[int64]string) // zendeskUserID -> purl agent UUID
+	agentsByZendeskID := make(map[int64]string)     // zendeskUserID -> purl agent UUID
+	agentNamesByZendeskID := make(map[int64]string) // zendeskUserID -> display name
 	for _, u := range allAgents {
 		var agentID string
 		err := db.QueryRow(
@@ -159,12 +201,13 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 			return fmt.Errorf("insert agent %s: %w", u.Email, err)
 		}
 		agentsByZendeskID[u.ID] = agentID
+		agentNamesByZendeskID[u.ID] = u.Name
 	}
 	log.Printf("upserted %d agents", len(agentsByZendeskID))
 
 	// Step 2: Fetch tickets
 	log.Println("fetching tickets...")
-	ticketsBody, err := zendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
+	ticketsBody, err := ZendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
 	if err != nil {
 		return fmt.Errorf("fetch tickets: %w", err)
 	}
@@ -180,7 +223,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	for i, ticket := range ticketsResp.Tickets {
 		log.Printf("fetching comments for ticket %d/%d (Zendesk ID %d)...", i+1, len(ticketsResp.Tickets), ticket.ID)
-		commentsBody, err := zendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
+		commentsBody, err := ZendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
 		if err != nil {
 			return fmt.Errorf("fetch comments for ticket %d: %w", ticket.ID, err)
 		}
@@ -209,7 +252,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 	customersByZendeskID := make(map[int64]string) // zendeskUserID -> purl customer UUID
 
 	if len(endUserIDs) > 0 {
-		usersBody, err := zendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
+		usersBody, err := ZendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
 		if err != nil {
 			return fmt.Errorf("fetch users: %w", err)
 		}
@@ -306,10 +349,41 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 				continue
 			}
 
+			// Extract voice data if this is a VoiceComment
+			var callID *int64
+			var recordingURL, transcriptionText, transcriptionStatus *string
+			var callDuration *int
+			var callFrom, callTo, answeredByName, callLocation *string
+			var callStartedAt *time.Time
+			if c.Data != nil {
+				callID = c.Data.CallID
+				recordingURL = c.Data.RecordingURL
+				transcriptionText = c.Data.TranscriptionText
+				transcriptionStatus = c.Data.TranscriptionStatus
+				callDuration = c.Data.CallDuration
+				callFrom = c.Data.callFrom()
+				callTo = c.Data.callTo()
+				callLocation = c.Data.Location
+				callStartedAt = c.Data.StartedAt
+				// Resolve agent name from answered_by_id if available
+				answeredByName = c.Data.AnsweredByName
+				if answeredByName == nil && c.Data.AnsweredByID != nil {
+					if name, ok := agentNamesByZendeskID[*c.Data.AnsweredByID]; ok {
+						answeredByName = &name
+					}
+				}
+			}
+
 			_, err := db.Exec(
-				`INSERT INTO ticket_comments (ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8)`,
+				`INSERT INTO ticket_comments
+					(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at,
+					 call_id, recording_url, transcription_text, transcription_status, call_duration,
+					 call_from, call_to, answered_by_name, call_location, call_started_at)
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8,
+				         $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
+				callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
+				callFrom, callTo, answeredByName, callLocation, callStartedAt,
 			)
 			if err != nil {
 				return fmt.Errorf("insert comment %d: %w", c.ID, err)

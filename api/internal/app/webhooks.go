@@ -69,13 +69,15 @@ type webhookCommentVia struct {
 }
 
 type webhookCommentDetail struct {
-	ID        flexInt64         `json:"id"`
-	TicketID  flexInt64         `json:"ticket_id"`
-	AuthorID  flexInt64         `json:"author_id"`
-	Body      string            `json:"body"`
-	Public    bool              `json:"public"`
-	Via       webhookCommentVia `json:"via"`
-	CreatedAt time.Time         `json:"created_at"`
+	ID        flexInt64          `json:"id"`
+	TicketID  flexInt64          `json:"ticket_id"`
+	AuthorID  flexInt64          `json:"author_id"`
+	Type      string             `json:"type"`
+	Body      string             `json:"body"`
+	Public    bool               `json:"public"`
+	Via       webhookCommentVia  `json:"via"`
+	CreatedAt time.Time          `json:"created_at"`
+	Data      *zendeskVoiceData  `json:"data"`
 }
 
 type webhookUserDetail struct {
@@ -464,13 +466,46 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 		}
 	}
 
+	// Extract voice data if present
+	var callID *int64
+	var recordingURL, transcriptionText, transcriptionStatus *string
+	var callDuration *int
+	var callFrom, callTo, answeredByName, callLocation *string
+	var callStartedAt *time.Time
+	if d.Data != nil {
+		callID = d.Data.CallID
+		recordingURL = d.Data.RecordingURL
+		transcriptionText = d.Data.TranscriptionText
+		transcriptionStatus = d.Data.TranscriptionStatus
+		callDuration = d.Data.CallDuration
+		callFrom = d.Data.callFrom()
+		callTo = d.Data.callTo()
+		callLocation = d.Data.Location
+		callStartedAt = d.Data.StartedAt
+		answeredByName = d.Data.AnsweredByName
+		if answeredByName == nil && d.Data.AnsweredByID != nil {
+			var name string
+			if err := tx.QueryRowContext(ctx,
+				`SELECT name FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
+				orgID, *d.Data.AnsweredByID,
+			).Scan(&name); err == nil {
+				answeredByName = &name
+			}
+		}
+	}
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ticket_comments
-			(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8)
+			(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at,
+			 call_id, recording_url, transcription_text, transcription_status, call_duration,
+			 call_from, call_to, answered_by_name, call_location, call_started_at)
+		VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8,
+		        $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		ON CONFLICT (ticket_id, zendesk_comment_id) DO NOTHING`,
 		ticketID, customerAuthorID, agentAuthorID, role,
 		d.Body, mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
+		callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
+		callFrom, callTo, answeredByName, callLocation, callStartedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert comment: %w", err)
