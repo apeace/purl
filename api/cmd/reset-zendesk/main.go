@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"log"
 	"os"
-
-	"purl/api/internal/app"
+	"strconv"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
+	"purl/api/internal/app"
+	"purl/api/internal/ratelimit"
 )
 
 func main() {
@@ -23,6 +26,11 @@ func main() {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		log.Fatal("REDIS_URL environment variable is required")
+	}
+
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -32,6 +40,26 @@ func main() {
 	if err := db.Ping(); err != nil {
 		log.Fatalf("ping db: %v", err)
 	}
+
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("parse redis url: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("ping redis: %v", err)
+	}
+
+	maxReqs := int64(100)
+	if s := os.Getenv("ZENDESK_RATE_LIMIT"); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			log.Fatalf("invalid ZENDESK_RATE_LIMIT: %v", err)
+		}
+		maxReqs = n
+	}
+	limiter := ratelimit.New(rdb, "zendesk", maxReqs, time.Minute)
+	log.Printf("Zendesk rate limit: %d req/min", maxReqs)
 
 	var orgID, subdomain, email, apiKey string
 	err = db.QueryRow(
@@ -48,7 +76,7 @@ func main() {
 		log.Fatalf("org %q has no Zendesk credentials configured", slug)
 	}
 
-	if err := app.ImportZendeskData(context.Background(), db, orgID, subdomain, email, apiKey); err != nil {
+	if err := app.ImportZendeskData(context.Background(), db, limiter, orgID, subdomain, email, apiKey); err != nil {
 		log.Fatalf("import zendesk data: %v", err)
 	}
 }

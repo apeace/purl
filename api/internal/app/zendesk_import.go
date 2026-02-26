@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"purl/api/internal/ratelimit"
 )
 
 type ZendeskTicket struct {
@@ -133,11 +135,16 @@ func ZendeskGet(subdomain, creds, path string) ([]byte, error) {
 }
 
 // fetchAllAgents retrieves all agents and admins from Zendesk, handling pagination.
-func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
+func fetchAllAgents(ctx context.Context, limiter *ratelimit.Limiter, subdomain, creds string) ([]ZendeskUser, error) {
 	var all []ZendeskUser
 	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
 
 	for path != "" {
+		if limiter != nil {
+			if err := limiter.Wait(ctx, creds); err != nil {
+				return nil, err
+			}
+		}
 		body, err := ZendeskGet(subdomain, creds, path)
 		if err != nil {
 			return nil, err
@@ -165,7 +172,8 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 
 // ImportZendeskData wipes all Zendesk-sourced data for the given org and re-imports it
 // fresh from the Zendesk API. Safe to call multiple times; each call starts from a clean slate.
-func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, apiKey string) error {
+// limiter may be nil to skip rate limiting.
+func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limiter, orgID, subdomain, email, apiKey string) error {
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
 
 	// Wipe existing Zendesk data. Order matters: tickets must be deleted before customers
@@ -189,7 +197,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	// Step 1: Fetch all agents and admins from Zendesk and upsert into DB.
 	log.Println("fetching all agents...")
-	allAgents, err := fetchAllAgents(subdomain, creds)
+	allAgents, err := fetchAllAgents(ctx, limiter, subdomain, creds)
 	if err != nil {
 		return fmt.Errorf("fetch agents: %w", err)
 	}
@@ -215,6 +223,11 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	// Step 2: Fetch tickets
 	log.Println("fetching tickets...")
+	if limiter != nil {
+		if err := limiter.Wait(ctx, creds); err != nil {
+			return err
+		}
+	}
 	ticketsBody, err := ZendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=50")
 	if err != nil {
 		return fmt.Errorf("fetch tickets: %w", err)
@@ -231,6 +244,11 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	for i, ticket := range ticketsResp.Tickets {
 		log.Printf("fetching comments for ticket %d/%d (Zendesk ID %d)...", i+1, len(ticketsResp.Tickets), ticket.ID)
+		if limiter != nil {
+			if err := limiter.Wait(ctx, creds); err != nil {
+				return err
+			}
+		}
 		commentsBody, err := ZendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
 		if err != nil {
 			return fmt.Errorf("fetch comments for ticket %d: %w", ticket.ID, err)
@@ -263,6 +281,11 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 	customersByZendeskID := make(map[int64]string) // zendeskUserID -> purl customer UUID
 
 	if len(endUserIDs) > 0 {
+		if limiter != nil {
+			if err := limiter.Wait(ctx, creds); err != nil {
+				return err
+			}
+		}
 		usersBody, err := ZendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
 		if err != nil {
 			return fmt.Errorf("fetch users: %w", err)
