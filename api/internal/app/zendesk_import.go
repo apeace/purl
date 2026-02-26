@@ -58,7 +58,7 @@ type ZendeskUsersResponse struct {
 	NextPage *string       `json:"next_page"`
 }
 
-func zendeskGet(subdomain, creds, path string) ([]byte, error) {
+func ZendeskGet(subdomain, creds, path string) ([]byte, error) {
 	url := fmt.Sprintf("https://%s.zendesk.com%s", subdomain, path)
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -89,7 +89,7 @@ func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
 	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
 
 	for path != "" {
-		body, err := zendeskGet(subdomain, creds, path)
+		body, err := ZendeskGet(subdomain, creds, path)
 		if err != nil {
 			return nil, err
 		}
@@ -164,7 +164,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	// Step 2: Fetch tickets
 	log.Println("fetching tickets...")
-	ticketsBody, err := zendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
+	ticketsBody, err := ZendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
 	if err != nil {
 		return fmt.Errorf("fetch tickets: %w", err)
 	}
@@ -180,7 +180,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	for i, ticket := range ticketsResp.Tickets {
 		log.Printf("fetching comments for ticket %d/%d (Zendesk ID %d)...", i+1, len(ticketsResp.Tickets), ticket.ID)
-		commentsBody, err := zendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
+		commentsBody, err := ZendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
 		if err != nil {
 			return fmt.Errorf("fetch comments for ticket %d: %w", ticket.ID, err)
 		}
@@ -209,7 +209,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 	customersByZendeskID := make(map[int64]string) // zendeskUserID -> purl customer UUID
 
 	if len(endUserIDs) > 0 {
-		usersBody, err := zendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
+		usersBody, err := ZendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
 		if err != nil {
 			return fmt.Errorf("fetch users: %w", err)
 		}
