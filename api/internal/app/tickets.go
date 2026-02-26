@@ -22,23 +22,24 @@ type ticketRow struct {
 }
 
 type ticketCommentRow struct {
-	ID                 string    `json:"id"`
-	Body               string    `json:"body"`
-	HtmlBody           *string   `json:"html_body"`
-	Channel            string    `json:"channel"`
-	Role               string    `json:"role"`
-	AuthorName         string    `json:"author_name"`
-	CreatedAt          time.Time `json:"created_at"`
-	CallID             *int64    `json:"call_id"`
-	HasRecording       bool      `json:"has_recording"`
-	TranscriptionText  *string   `json:"transcription_text"`
-	TranscriptionStatus *string  `json:"transcription_status"`
-	CallDuration       *int      `json:"call_duration"`
-	CallFrom           *string   `json:"call_from"`
-	CallTo             *string   `json:"call_to"`
-	AnsweredByName     *string   `json:"answered_by_name"`
-	CallLocation       *string   `json:"call_location"`
-	CallStartedAt      *time.Time `json:"call_started_at"`
+	ID                  string     `json:"id"`
+	Body                string     `json:"body"`
+	HtmlBody            *string    `json:"html_body"`
+	Channel             string     `json:"channel"`
+	Role                string     `json:"role"`
+	AuthorName          string     `json:"author_name"`
+	AuthorDisplayName   *string    `json:"author_display_name"`
+	CreatedAt           time.Time  `json:"created_at"`
+	CallID              *int64     `json:"call_id"`
+	HasRecording        bool       `json:"has_recording"`
+	TranscriptionText   *string    `json:"transcription_text"`
+	TranscriptionStatus *string    `json:"transcription_status"`
+	CallDuration        *int       `json:"call_duration"`
+	CallFrom            *string    `json:"call_from"`
+	CallTo              *string    `json:"call_to"`
+	AnsweredByName      *string    `json:"answered_by_name"`
+	CallLocation        *string    `json:"call_location"`
+	CallStartedAt       *time.Time `json:"call_started_at"`
 }
 
 // @Summary     List tickets
@@ -118,6 +119,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.QueryContext(r.Context(), `
 		SELECT tc.id, tc.body, tc.html_body, tc.channel::text, tc.role::text,
 		       COALESCE(a.name, c.name, '') AS author_name,
+		       tc.author_display_name,
 		       tc.created_at,
 		       tc.call_id,
 		       tc.recording_url IS NOT NULL AS has_recording,
@@ -133,7 +135,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 		LEFT JOIN agents a ON a.id = tc.agent_author_id
 		LEFT JOIN customers c ON c.id = tc.customer_author_id
 		WHERE tc.ticket_id = $1
-		ORDER BY tc.created_at ASC
+		ORDER BY tc.created_at ASC, tc.zendesk_sub_index ASC
 	`, ticketID)
 	if err != nil {
 		http.Error(w, "query failed", http.StatusInternalServerError)
@@ -145,7 +147,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	comments := []ticketCommentRow{}
 	for rows.Next() {
 		var c ticketCommentRow
-		if err := rows.Scan(&c.ID, &c.Body, &c.HtmlBody, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt,
+		if err := rows.Scan(&c.ID, &c.Body, &c.HtmlBody, &c.Channel, &c.Role, &c.AuthorName, &c.AuthorDisplayName, &c.CreatedAt,
 			&c.CallID, &c.HasRecording, &c.TranscriptionText, &c.TranscriptionStatus,
 			&c.CallDuration, &c.CallFrom, &c.CallTo, &c.AnsweredByName,
 			&c.CallLocation, &c.CallStartedAt); err != nil {

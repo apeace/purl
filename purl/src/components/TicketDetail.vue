@@ -182,30 +182,6 @@
                 </div>
               </div>
 
-              <!-- Web chat conversation -->
-              <div v-else-if="msg.messageType === 'web_chat'" class="msg-body msg-body--webchat">
-                <div class="webchat-thread">
-                  <div
-                    v-for="(line, i) in parseWebChatLines(msg.text)"
-                    :key="i"
-                    class="webchat-line"
-                    :class="line.role === 'customer' ? 'webchat-line--user' : 'webchat-line--bot'"
-                  >
-                    <div class="webchat-avatar" :class="`webchat-avatar--${line.role}`">
-                      <Bot v-if="line.role === 'bot'" :size="11" />
-                      <User v-else :size="11" />
-                    </div>
-                    <div class="webchat-bubble" :class="line.role === 'customer' ? 'webchat-bubble--user' : 'webchat-bubble--bot'">
-                      <div class="webchat-meta">
-                        <span class="webchat-speaker">{{ line.role === 'customer' ? 'Customer' : line.speaker }}</span>
-                        <span class="webchat-time">{{ line.time }}</span>
-                      </div>
-                      <div class="webchat-text">{{ line.text }}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               <!-- Merge notice -->
               <div v-else-if="msg.messageType === 'merge_notice'" class="msg-body msg-body--merge">
                 {{ msg.text }}
@@ -779,7 +755,7 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, Bot, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, ExternalLink, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, ExternalLink, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
@@ -978,38 +954,6 @@ function autoLinkUrls(text: string): string {
     /https?:\/\/[^\s<>"')\]]+/g,
     (url) => `<a href="${url}" target="_blank" rel="noopener" class="auto-link">${url}</a>`
   )
-}
-
-// Web chat body parser — splits "(HH:MM:SS) Speaker: text" lines into structured entries
-type ChatRole = "customer" | "bot" | "agent"
-
-interface ChatLine {
-  speaker: string
-  role: ChatRole
-  time: string
-  text: string
-}
-
-function chatSpeakerRole(speaker: string): ChatRole {
-  if (/bot\b/i.test(speaker) || speaker.toLowerCase() === "system") return "bot"
-  if (/^web user\b/i.test(speaker)) return "customer"
-  return "agent"
-}
-
-function parseWebChatLines(body: string): ChatLine[] {
-  const lines: ChatLine[] = []
-  // Split on timestamp markers: (HH:MM:SS)
-  const parts = body.split(/(?=\(\d{1,2}:\d{2}:\d{2}\)\s)/)
-  for (const part of parts) {
-    const m = part.match(/^\((\d{1,2}:\d{2}:\d{2})\)\s+(.+?):\s*([\s\S]*)$/)
-    if (!m) continue
-    const time = m[1]
-    const speaker = m[2].trim()
-    const text = m[3].trim()
-    if (!text) continue
-    lines.push({ speaker, role: chatSpeakerRole(speaker), time, text })
-  }
-  return lines
 }
 
 // Load comments whenever the displayed ticket changes
@@ -3394,102 +3338,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
-}
-
-/* ── Web chat conversation ──────────────────────────────── */
-
-.msg-body--webchat {
-  padding: 0 !important;
-}
-
-.webchat-thread {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 4px;
-}
-
-.webchat-line {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  max-width: 85%;
-}
-
-.webchat-line--bot {
-  align-self: flex-end;
-  flex-direction: row-reverse;
-}
-
-.webchat-line--user {
-  align-self: flex-start;
-}
-
-.webchat-avatar {
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-top: 2px;
-}
-
-.webchat-avatar--bot {
-  background: rgba(99, 102, 241, 0.25);
-  color: #818cf8;
-}
-
-.webchat-avatar--agent {
-  background: rgba(56, 189, 248, 0.2);
-  color: #38bdf8;
-}
-
-.webchat-avatar--customer {
-  background: rgba(52, 211, 153, 0.2);
-  color: #34d399;
-}
-
-.webchat-bubble {
-  border-radius: 12px;
-  padding: 6px 10px;
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.webchat-bubble--bot {
-  background: rgba(255, 255, 255, 0.06);
-  border-top-right-radius: 4px;
-}
-
-.webchat-bubble--user {
-  background: rgba(52, 211, 153, 0.1);
-  border-top-left-radius: 4px;
-}
-
-.webchat-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  margin-bottom: 1px;
-}
-
-.webchat-speaker {
-  font-size: 10.5px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.webchat-time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.25);
-}
-
-.webchat-text {
-  color: rgba(255, 255, 255, 0.82);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 /* ── Merge / system notices ─────────────────────────────── */

@@ -348,6 +348,7 @@ export const useTicketStore = defineStore("tickets", () => {
   // Extended type until the OpenAPI client regenerates with new fields
   type CommentRowExt = AppTicketCommentRow & {
     author_name?: string
+    author_display_name?: string
     html_body?: string
     call_id?: number
     has_recording?: boolean
@@ -373,8 +374,9 @@ export const useTicketStore = defineStore("tickets", () => {
     const htmlBody = rawHtml ? sanitizeHtml(rawHtml) : undefined
 
     // When Zendesk Automation wraps an agent reply, the body starts with
-    // "(HH:MM:SS) Agent Name: ..." — extract the real sender and clean body
-    let displayAuthor = c.author_name || undefined
+    // "(HH:MM:SS) Agent Name: ..." — extract the real sender and clean body.
+    // Prefer author_display_name (parsed speaker from web chat transcripts).
+    let displayAuthor = c.author_display_name || c.author_name || undefined
     let displayText = parsed.cleanBody
     let displayHtml = htmlBody
     let automated = false
