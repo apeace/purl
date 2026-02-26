@@ -101,8 +101,15 @@
                     <span>{{ msg.call.timeOfCall }}</span>
                   </div>
                 </div>
-                <div v-if="msg.hasRecording" class="call-card-audio">
-                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                <div v-if="msg.hasRecording" class="call-audio-player">
+                  <button class="call-audio-play-btn" @click="toggleAudioPlayback(msg)">
+                    <Pause v-if="audioIsPlaying(msg)" :size="14" />
+                    <Play v-else :size="14" />
+                  </button>
+                  <div class="call-audio-track" @click="seekAudio($event)">
+                    <div class="call-audio-progress" :style="{ width: `${audioProgressFor(msg) * 100}%` }" />
+                  </div>
+                  <span class="call-audio-time">{{ audioTimeDisplay(msg) }} / {{ audioDurationDisplay(msg) }}</span>
                 </div>
                 <a v-else-if="msg.call.recordingUrl" :href="msg.call.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to recording
@@ -137,8 +144,15 @@
                     <span>{{ msg.voicemail.location }}</span>
                   </div>
                 </div>
-                <div v-if="msg.hasRecording" class="call-card-audio">
-                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                <div v-if="msg.hasRecording" class="call-audio-player call-audio-player--voicemail">
+                  <button class="call-audio-play-btn call-audio-play-btn--voicemail" @click="toggleAudioPlayback(msg)">
+                    <Pause v-if="audioIsPlaying(msg)" :size="14" />
+                    <Play v-else :size="14" />
+                  </button>
+                  <div class="call-audio-track call-audio-track--voicemail" @click="seekAudio($event)">
+                    <div class="call-audio-progress call-audio-progress--voicemail" :style="{ width: `${audioProgressFor(msg) * 100}%` }" />
+                  </div>
+                  <span class="call-audio-time">{{ audioTimeDisplay(msg) }} / {{ audioDurationDisplay(msg) }}</span>
                 </div>
                 <a v-else-if="msg.voicemail.recordingUrl" :href="msg.voicemail.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to voicemail
@@ -772,11 +786,18 @@ const confirmAction = ref<ConfirmAction | null>(null)
 const sessionStartTime = ref<number | null>(null)
 let callIdCounter = 0
 
-// Recording playback state
+// Recording playback state (demo waveform player)
 const playingRecordingId = ref<number | null>(null)
 const playbackProgress = ref(0)
 const playbackTimerHandle = ref<ReturnType<typeof setInterval> | null>(null)
 const expandedTranscriptId = ref<number | null>(null)
+
+// Real audio playback state (call/voicemail recordings from Zendesk)
+const audioEl = ref<HTMLAudioElement | null>(null)
+const audioPlayingMsgId = ref<number | null>(null)
+const audioCurrentTime = ref(0)
+const audioDuration = ref(0)
+const audioLoading = ref(false)
 
 const channelOptions = [
   { id: "chat", icon: MessageCircle, label: "Chat" },
@@ -1182,6 +1203,82 @@ function stopPlayback() {
   playbackProgress.value = 0
 }
 
+// Real audio playback (call/voicemail recordings)
+function toggleAudioPlayback(msg: Message) {
+  if (audioPlayingMsgId.value === msg.id) {
+    if (audioEl.value?.paused) {
+      audioEl.value.play()
+    } else {
+      audioEl.value?.pause()
+    }
+    return
+  }
+  stopAudioPlayback()
+  audioLoading.value = true
+  audioPlayingMsgId.value = msg.id
+  const audio = new Audio(recordingUrl(msg))
+  audioEl.value = audio
+  audio.addEventListener("loadedmetadata", () => {
+    audioDuration.value = audio.duration
+    audioLoading.value = false
+  })
+  audio.addEventListener("timeupdate", () => {
+    audioCurrentTime.value = audio.currentTime
+  })
+  audio.addEventListener("ended", () => {
+    stopAudioPlayback()
+  })
+  audio.addEventListener("error", () => {
+    audioLoading.value = false
+    stopAudioPlayback()
+  })
+  audio.play()
+}
+
+function stopAudioPlayback() {
+  if (audioEl.value) {
+    audioEl.value.pause()
+    audioEl.value.src = ""
+    audioEl.value = null
+  }
+  audioPlayingMsgId.value = null
+  audioCurrentTime.value = 0
+  audioDuration.value = 0
+  audioLoading.value = false
+}
+
+function seekAudio(event: MouseEvent) {
+  if (!audioEl.value || !audioDuration.value) return
+  const bar = event.currentTarget as HTMLElement
+  const rect = bar.getBoundingClientRect()
+  const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+  audioEl.value.currentTime = pct * audioDuration.value
+}
+
+function audioProgressFor(msg: Message): number {
+  if (audioPlayingMsgId.value !== msg.id || !audioDuration.value) return 0
+  return audioCurrentTime.value / audioDuration.value
+}
+
+function audioIsPlaying(msg: Message): boolean {
+  return audioPlayingMsgId.value === msg.id && !!audioEl.value && !audioEl.value.paused
+}
+
+function audioTimeDisplay(msg: Message): string {
+  if (audioPlayingMsgId.value !== msg.id) return "0:00"
+  return formatDuration(Math.floor(audioCurrentTime.value))
+}
+
+function audioDurationDisplay(msg: Message): string {
+  if (audioPlayingMsgId.value === msg.id && audioDuration.value) {
+    return formatDuration(Math.floor(audioDuration.value))
+  }
+  // Fall back to call/voicemail metadata duration if available
+  const raw = msg.call?.duration ?? msg.voicemail?.duration
+  if (raw) return raw
+  return "--:--"
+}
+
 function toggleTranscript(msgId: number) {
   expandedTranscriptId.value = expandedTranscriptId.value === msgId ? null : msgId
 }
@@ -1247,6 +1344,7 @@ onBeforeUnmount(() => {
     clearRingTimer(c)
   })
   stopPlayback()
+  stopAudioPlayback()
 })
 </script>
 
@@ -2861,14 +2959,87 @@ onBeforeUnmount(() => {
   background: rgba(99, 102, 241, 0.18);
 }
 
-.call-card-audio {
-  margin-top: 8px;
+/* ── Custom audio player for call recordings ───────────── */
+
+.call-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08);
 }
 
-.call-card-player {
-  width: 100%;
-  height: 32px;
-  border-radius: 6px;
+.call-audio-player--voicemail {
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.call-audio-play-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.call-audio-play-btn:hover {
+  background: rgba(99, 102, 241, 0.35);
+  transform: scale(1.05);
+}
+
+.call-audio-play-btn:active {
+  transform: scale(0.95);
+}
+
+.call-audio-play-btn--voicemail {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+}
+
+.call-audio-play-btn--voicemail:hover {
+  background: rgba(168, 85, 247, 0.35);
+}
+
+.call-audio-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.15);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.call-audio-track--voicemail {
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.call-audio-progress {
+  height: 100%;
+  border-radius: 3px;
+  background: #818cf8;
+  transition: width 0.1s linear;
+}
+
+.call-audio-progress--voicemail {
+  background: #c084fc;
+}
+
+.call-audio-time {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.5);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .call-card-transcript {

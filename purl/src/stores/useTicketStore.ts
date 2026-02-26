@@ -412,7 +412,49 @@ export const useTicketStore = defineStore("tickets", () => {
     const ticket = tickets.value.find((t) => t.id === ticketId)
     if (!ticket) return
 
-    ticket.messages = data.map((c, i) => commentToMessage(c, i + 1))
+    // Deduplicate comments that share the same call_id. Zendesk often creates
+    // both a detailed "Inbound/Outbound call" comment and a shorter "Call to/from"
+    // summary for the same call. Keep the richer one.
+    const deduped = deduplicateByCallId(data)
+    ticket.messages = deduped.map((c, i) => commentToMessage(c, i + 1))
+  }
+
+  function deduplicateByCallId(comments: AppTicketCommentRow[]): AppTicketCommentRow[] {
+    const seen = new Map<number, number>() // call_id → index in result
+    const result: AppTicketCommentRow[] = []
+
+    for (const c of comments) {
+      const ext = c as CommentRowExt
+      if (!ext.call_id) {
+        result.push(c)
+        continue
+      }
+
+      const existing = seen.get(ext.call_id)
+      if (existing === undefined) {
+        seen.set(ext.call_id, result.length)
+        result.push(c)
+      } else {
+        // Keep whichever comment is richer (has recording, or is a full
+        // inbound/outbound call rather than a summary)
+        const prev = result[existing] as CommentRowExt
+        const prevIsDetailed = /^(Inbound|Outbound) call/.test(prev.body ?? "")
+        const curIsDetailed = /^(Inbound|Outbound) call/.test(ext.body ?? "")
+
+        if (!prevIsDetailed && curIsDetailed) {
+          // Current is richer — replace, carrying over recording/transcript if missing
+          if (!ext.has_recording && prev.has_recording) ext.has_recording = prev.has_recording
+          if (!ext.transcription_text && prev.transcription_text) ext.transcription_text = prev.transcription_text
+          result[existing] = c
+        } else {
+          // Previous is richer — carry over any data the prev lacks
+          if (!prev.has_recording && ext.has_recording) prev.has_recording = ext.has_recording
+          if (!prev.transcription_text && ext.transcription_text) prev.transcription_text = ext.transcription_text
+        }
+      }
+    }
+
+    return result
   }
 
   // Auto-load on first store access
