@@ -72,6 +72,28 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+
+  generate-summaries:
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: ../api/.env
+    depends_on:
+      - postgres
+      - ollama
+    entrypoint: /bin/sh -c "while :; do ./bin/generate-summaries; sleep 2; done"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   certbot:
     image: certbot/certbot
     restart: unless-stopped
@@ -84,3 +106,4 @@ volumes:
   postgres_data:
   certbot_certs:
   certbot_www:
+  ollama_data:

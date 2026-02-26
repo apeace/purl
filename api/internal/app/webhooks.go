@@ -69,15 +69,15 @@ type webhookCommentVia struct {
 }
 
 type webhookCommentDetail struct {
-	ID        flexInt64          `json:"id"`
-	TicketID  flexInt64          `json:"ticket_id"`
-	AuthorID  flexInt64          `json:"author_id"`
-	Type      string             `json:"type"`
-	Body      string             `json:"body"`
-	Public    bool               `json:"public"`
-	Via       webhookCommentVia  `json:"via"`
-	CreatedAt time.Time          `json:"created_at"`
-	Data      *zendeskVoiceData  `json:"data"`
+	ID        flexInt64         `json:"id"`
+	TicketID  flexInt64         `json:"ticket_id"`
+	AuthorID  flexInt64         `json:"author_id"`
+	Type      string            `json:"type"`
+	Body      string            `json:"body"`
+	Public    bool              `json:"public"`
+	Via       webhookCommentVia `json:"via"`
+	CreatedAt time.Time         `json:"created_at"`
+	Data      *zendeskVoiceData `json:"data"`
 }
 
 type webhookUserDetail struct {
@@ -521,6 +521,12 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 	)
 	if err != nil {
 		return fmt.Errorf("upsert comment: %w", err)
+	}
+
+	if _, err = tx.ExecContext(ctx,
+		`UPDATE tickets SET ai_summary_stale = TRUE WHERE id = $1`, ticketID,
+	); err != nil {
+		return fmt.Errorf("mark ticket stale: %w", err)
 	}
 
 	return tx.Commit()
