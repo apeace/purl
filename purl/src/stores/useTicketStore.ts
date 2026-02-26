@@ -1,7 +1,9 @@
-import { computed, reactive, ref } from "vue"
-import { defineStore } from "pinia"
-import { getTickets, getTicketsByTicketIdComments } from "@purl/lib"
 import type { AppTicketCommentRow, AppTicketRow } from "@purl/lib"
+import { getTickets, getTicketsByTicketIdComments } from "@purl/lib"
+import { defineStore } from "pinia"
+import { computed, reactive, ref } from "vue"
+import type { CallData, CommChannel, MergeData, MessageType, VoicemailData } from "../utils/parseComment"
+import { parseComment, stripHtml } from "../utils/parseComment"
 
 // ── Types ───────────────────────────────────────────────
 
@@ -11,6 +13,12 @@ export interface Message {
   channel: string
   time: string
   text: string
+  authorName?: string
+  messageType?: MessageType
+  commChannel?: CommChannel
+  call?: CallData
+  voicemail?: VoicemailData
+  merge?: MergeData
   type?: string
   recording?: {
     duration: number
@@ -25,6 +33,7 @@ export interface Ticket {
   company: string
   ticketId: string
   subject: string
+  description: string
   createdAt: string
   wait: string
   avatarColor: string
@@ -83,17 +92,26 @@ function formatTime(createdAt: string): string {
   return new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
 }
 
-function toTicket(t: AppTicketRow): Ticket {
+// Extended type until the OpenAPI client regenerates with new fields
+type TicketRowExt = AppTicketRow & {
+  zendesk_ticket_id?: number
+  assignee_name?: string
+  reporter_email?: string
+}
+
+function toTicket(raw: AppTicketRow): Ticket {
+  const t = raw as TicketRowExt
   const id = t.id ?? ""
   const reporterName = t.reporter_name ?? ""
   const createdAt = t.created_at ?? ""
-  const description = t.description ?? ""
+  const zendeskId = t.zendesk_ticket_id
   return {
     id,
     name: reporterName,
     company: "",
-    ticketId: `#${id.slice(0, 6).toUpperCase()}`,
+    ticketId: zendeskId ? `#${zendeskId}` : `#${id.slice(0, 6).toUpperCase()}`,
     subject: t.title ?? "",
+    description: stripHtml(t.description ?? ""),
     createdAt,
     wait: formatWait(createdAt),
     avatarColor: avatarColor(reporterName),
@@ -102,12 +120,12 @@ function toTicket(t: AppTicketRow): Ticket {
     starred: false,
     labels: [],
     time: formatTime(createdAt),
-    email: "",
+    email: t.reporter_email ?? "",
     phone: "",
     subscription: { status: "active", id: "", plan: "" },
     tags: [],
     temperature: "warm",
-    assignee: (t as AppTicketRow & { assignee_name?: string }).assignee_name ?? "Unassigned",
+    assignee: t.assignee_name ?? "Unassigned",
     notes: "",
     messages: [],
     ticketHistory: [
@@ -314,13 +332,28 @@ export const useTicketStore = defineStore("tickets", () => {
   // Track which ticket IDs have had comments loaded to avoid duplicate fetches
   const loadedCommentTickets = new Set<string>()
 
-  function commentToMessage(c: AppTicketCommentRow, index: number): Message {
+  // Extended type until the OpenAPI client regenerates with author_name
+  type CommentRowExt = AppTicketCommentRow & { author_name?: string }
+
+  function commentToMessage(raw: AppTicketCommentRow, index: number): Message {
+    const c = raw as CommentRowExt
+    const body = c.body ?? ""
+    const channel = c.channel ?? "email"
+    const role = c.role ?? "customer"
+    const parsed = parseComment(body, channel, role)
+
     return {
       id: index,
-      from: c.role === "agent" ? "agent" : "customer",
-      channel: c.channel ?? "email",
+      from: role === "agent" ? "agent" : "customer",
+      channel,
       time: formatWait(c.created_at ?? ""),
-      text: c.body ?? "",
+      text: parsed.cleanBody,
+      authorName: c.author_name || undefined,
+      messageType: parsed.messageType,
+      commChannel: parsed.commChannel,
+      call: parsed.call,
+      voicemail: parsed.voicemail,
+      merge: parsed.merge,
     }
   }
 
