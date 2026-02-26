@@ -1,6 +1,7 @@
-package main
+package app
 
 import (
+	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -8,11 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"time"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type ZendeskTicket struct {
@@ -85,61 +83,66 @@ func zendeskGet(subdomain, creds, path string) ([]byte, error) {
 	return body, nil
 }
 
-func main() {
-	if len(os.Args) < 2 {
-		log.Fatal("Usage: pull-zendesk <org-slug>")
+// fetchAllAgents retrieves all agents and admins from Zendesk, handling pagination.
+func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
+	var all []ZendeskUser
+	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
+
+	for path != "" {
+		body, err := zendeskGet(subdomain, creds, path)
+		if err != nil {
+			return nil, err
+		}
+		var resp ZendeskUsersResponse
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nil, fmt.Errorf("parse users: %w", err)
+		}
+		all = append(all, resp.Users...)
+
+		if resp.NextPage == nil {
+			break
+		}
+		// NextPage is a full URL; extract the path+query portion
+		next := *resp.NextPage
+		idx := strings.Index(next, "/api/v2/")
+		if idx == -1 {
+			break
+		}
+		path = next[idx:]
 	}
 
-	slug := os.Args[1]
+	return all, nil
+}
 
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		log.Fatal("DATABASE_URL environment variable is required")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		log.Fatalf("open db: %v", err)
-	}
-	defer db.Close()
-
-	if err := db.Ping(); err != nil {
-		log.Fatalf("ping db: %v", err)
-	}
-
-	var orgID, subdomain, email, apiKey string
-	err = db.QueryRow(
-		`SELECT id, zendesk_subdomain, COALESCE(zendesk_email, ''), COALESCE(zendesk_api_key, '') FROM organizations WHERE slug = $1`,
-		slug,
-	).Scan(&orgID, &subdomain, &email, &apiKey)
-	if err == sql.ErrNoRows {
-		log.Fatalf("no organization found with slug %q", slug)
-	}
-	if err != nil {
-		log.Fatalf("query org: %v", err)
-	}
-	if subdomain == "" || email == "" || apiKey == "" {
-		log.Fatalf("org %q has no Zendesk credentials configured", slug)
-	}
-
+// ImportZendeskData wipes all Zendesk-sourced data for the given org and re-imports it
+// fresh from the Zendesk API. Safe to call multiple times; each call starts from a clean slate.
+func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, apiKey string) error {
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
 
-	// Step 0: Wipe existing tickets and customers for this org.
-	// Tickets must be deleted before customers because tickets reference customers via reporter_id.
-	// Deleting tickets cascades to comments. Deleting customers cascades to customer_emails.
-	log.Println("wiping existing tickets and customers for org...")
-	if _, err := db.Exec(`DELETE FROM tickets WHERE org_id = $1`, orgID); err != nil {
-		log.Fatalf("wipe tickets: %v", err)
+	// Wipe existing Zendesk data. Order matters: tickets must be deleted before customers
+	// because tickets reference customers via reporter_id. Agents with a zendesk_user_id
+	// are re-upserted below, so wipe them too for a clean import.
+	log.Println("wiping existing Zendesk data for org...")
+	if _, err := db.Exec(`DELETE FROM zendesk_webhook_events WHERE org_id = $1`, orgID); err != nil {
+		return fmt.Errorf("wipe zendesk_webhook_events: %w", err)
 	}
+	// Cascades to ticket_comments and board_tickets.
+	if _, err := db.Exec(`DELETE FROM tickets WHERE org_id = $1`, orgID); err != nil {
+		return fmt.Errorf("wipe tickets: %w", err)
+	}
+	// Cascades to customer_emails.
 	if _, err := db.Exec(`DELETE FROM customers WHERE org_id = $1`, orgID); err != nil {
-		log.Fatalf("wipe customers: %v", err)
+		return fmt.Errorf("wipe customers: %w", err)
+	}
+	if _, err := db.Exec(`DELETE FROM agents WHERE org_id = $1 AND zendesk_user_id IS NOT NULL`, orgID); err != nil {
+		return fmt.Errorf("wipe agents: %w", err)
 	}
 
 	// Step 1: Fetch all agents and admins from Zendesk and upsert into DB.
 	log.Println("fetching all agents...")
 	allAgents, err := fetchAllAgents(subdomain, creds)
 	if err != nil {
-		log.Fatalf("fetch agents: %v", err)
+		return fmt.Errorf("fetch agents: %w", err)
 	}
 	log.Printf("fetched %d agents", len(allAgents))
 
@@ -153,7 +156,7 @@ func main() {
 			u.Email, u.Name, orgID, u.ID,
 		).Scan(&agentID)
 		if err != nil {
-			log.Fatalf("insert agent %s: %v", u.Email, err)
+			return fmt.Errorf("insert agent %s: %w", u.Email, err)
 		}
 		agentsByZendeskID[u.ID] = agentID
 	}
@@ -163,11 +166,11 @@ func main() {
 	log.Println("fetching tickets...")
 	ticketsBody, err := zendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
 	if err != nil {
-		log.Fatalf("fetch tickets: %v", err)
+		return fmt.Errorf("fetch tickets: %w", err)
 	}
 	var ticketsResp ZendeskTicketsResponse
 	if err := json.Unmarshal(ticketsBody, &ticketsResp); err != nil {
-		log.Fatalf("parse tickets: %v", err)
+		return fmt.Errorf("parse tickets: %w", err)
 	}
 	log.Printf("fetched %d tickets", len(ticketsResp.Tickets))
 
@@ -179,11 +182,11 @@ func main() {
 		log.Printf("fetching comments for ticket %d/%d (Zendesk ID %d)...", i+1, len(ticketsResp.Tickets), ticket.ID)
 		commentsBody, err := zendeskGet(subdomain, creds, fmt.Sprintf("/api/v2/tickets/%d/comments.json", ticket.ID))
 		if err != nil {
-			log.Fatalf("fetch comments for ticket %d: %v", ticket.ID, err)
+			return fmt.Errorf("fetch comments for ticket %d: %w", ticket.ID, err)
 		}
 		var commentsResp ZendeskCommentsResponse
 		if err := json.Unmarshal(commentsBody, &commentsResp); err != nil {
-			log.Fatalf("parse comments for ticket %d: %v", ticket.ID, err)
+			return fmt.Errorf("parse comments for ticket %d: %w", ticket.ID, err)
 		}
 		allComments[ticket.ID] = commentsResp.Comments
 
@@ -208,11 +211,11 @@ func main() {
 	if len(endUserIDs) > 0 {
 		usersBody, err := zendeskGet(subdomain, creds, "/api/v2/users/show_many.json?ids="+strings.Join(endUserIDs, ","))
 		if err != nil {
-			log.Fatalf("fetch users: %v", err)
+			return fmt.Errorf("fetch users: %w", err)
 		}
 		var usersResp ZendeskUsersResponse
 		if err := json.Unmarshal(usersBody, &usersResp); err != nil {
-			log.Fatalf("parse users: %v", err)
+			return fmt.Errorf("parse users: %w", err)
 		}
 
 		// Step 5: Insert customers
@@ -226,14 +229,14 @@ func main() {
 				u.Name, orgID, u.ID,
 			).Scan(&customerID)
 			if err != nil {
-				log.Fatalf("insert customer %s: %v", u.Email, err)
+				return fmt.Errorf("insert customer %s: %w", u.Email, err)
 			}
 			_, err = db.Exec(
 				`INSERT INTO customer_emails (customer_id, email, verified) VALUES ($1, $2, false)`,
 				customerID, u.Email,
 			)
 			if err != nil {
-				log.Fatalf("insert customer email %s: %v", u.Email, err)
+				return fmt.Errorf("insert customer email %s: %w", u.Email, err)
 			}
 			customersByZendeskID[u.ID] = customerID
 		}
@@ -269,11 +272,11 @@ func main() {
 			orgID,
 			ticket.CreatedAt,
 			ticket.UpdatedAt,
-			mapZendeskStatusCategory(ticket.Status),
+			mapZendeskStatus(ticket.Status),
 			ticket.ID,
 		).Scan(&ticketID)
 		if err != nil {
-			log.Fatalf("insert ticket %d: %v", ticket.ID, err)
+			return fmt.Errorf("insert ticket %d: %w", ticket.ID, err)
 		}
 		ticketsByZendeskID[ticket.ID] = ticketID
 	}
@@ -309,7 +312,7 @@ func main() {
 				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
 			)
 			if err != nil {
-				log.Fatalf("insert comment %d: %v", c.ID, err)
+				return fmt.Errorf("insert comment %d: %w", c.ID, err)
 			}
 			commentsInserted++
 		}
@@ -317,7 +320,7 @@ func main() {
 	log.Printf("inserted %d comments", commentsInserted)
 
 	// Step 8: Place tickets into the default Kanban board columns by zendesk_status.
-	// Deleting tickets in Step 0 cascades to board_tickets, so we start fresh.
+	// Deleting tickets above cascades to board_tickets, so we start fresh.
 	log.Println("placing tickets into default Kanban board...")
 
 	var defaultBoardID string
@@ -328,10 +331,10 @@ func main() {
 	if err == sql.ErrNoRows {
 		log.Println("warn: no default Kanban board found — skipping ticket placement")
 		log.Println("done")
-		return
+		return nil
 	}
 	if err != nil {
-		log.Fatalf("query default board: %v", err)
+		return fmt.Errorf("query default board: %w", err)
 	}
 
 	// Check which zendesk_status values have a matching column and warn about gaps
@@ -340,13 +343,13 @@ func main() {
 		defaultBoardID,
 	)
 	if err != nil {
-		log.Fatalf("query board columns: %v", err)
+		return fmt.Errorf("query board columns: %w", err)
 	}
 	coveredStatuses := map[string]bool{}
 	for colRows.Next() {
 		var s string
 		if err := colRows.Scan(&s); err != nil {
-			log.Fatalf("scan board column: %v", err)
+			return fmt.Errorf("scan board column: %w", err)
 		}
 		coveredStatuses[s] = true
 	}
@@ -372,72 +375,10 @@ func main() {
 		WHERE t.org_id = $2
 	`, defaultBoardID, orgID)
 	if err != nil {
-		log.Fatalf("place tickets in kanban: %v", err)
+		return fmt.Errorf("place tickets in kanban: %w", err)
 	}
 	placed, _ := result.RowsAffected()
 	log.Printf("placed %d tickets into default Kanban board", placed)
 	log.Println("done")
-}
-
-// fetchAllAgents retrieves all agents and admins from Zendesk, handling pagination.
-func fetchAllAgents(subdomain, creds string) ([]ZendeskUser, error) {
-	var all []ZendeskUser
-	path := "/api/v2/users.json?role[]=agent&role[]=admin&per_page=100"
-
-	for path != "" {
-		body, err := zendeskGet(subdomain, creds, path)
-		if err != nil {
-			return nil, err
-		}
-		var resp ZendeskUsersResponse
-		if err := json.Unmarshal(body, &resp); err != nil {
-			return nil, fmt.Errorf("parse users: %w", err)
-		}
-		all = append(all, resp.Users...)
-
-		if resp.NextPage == nil {
-			break
-		}
-		// NextPage is a full URL; extract the path+query portion
-		next := *resp.NextPage
-		idx := strings.Index(next, "/api/v2/")
-		if idx == -1 {
-			break
-		}
-		path = next[idx:]
-	}
-
-	return all, nil
-}
-
-// mapCommentChannel maps a Zendesk via.channel value and public flag to our comment_channel enum.
-// Private comments (public=false) are always internal notes regardless of channel.
-func mapCommentChannel(viaChannel string, public bool) string {
-	if !public {
-		return "internal"
-	}
-	switch viaChannel {
-	case "email":
-		return "email"
-	case "sms", "native_messaging", "whatsapp":
-		return "sms"
-	case "voice", "phone":
-		return "voice"
-	default:
-		return "web"
-	}
-}
-
-// mapZendeskStatusCategory maps a Zendesk ticket status to the zendesk_status_category
-// enum, which mirrors Zendesk's status categories. "hold" is not a category of its own;
-// Zendesk places it under "pending".
-func mapZendeskStatusCategory(s string) string {
-	switch s {
-	case "new", "open", "pending", "solved", "closed":
-		return s
-	case "hold":
-		return "pending"
-	default:
-		return "open"
-	}
+	return nil
 }

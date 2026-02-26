@@ -209,10 +209,16 @@ func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
 	for _, e := range events {
 		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload); err != nil {
 			log.Printf("process-zendesk-webhooks: event %s (%s) failed: %v — will retry", e.id, e.eventType, err)
+			if _, dbErr := db.ExecContext(ctx,
+				`UPDATE zendesk_webhook_events SET last_error = $1 WHERE id = $2`,
+				err.Error(), e.id,
+			); dbErr != nil {
+				log.Printf("process-zendesk-webhooks: record error for event %s: %v", e.id, dbErr)
+			}
 			continue
 		}
 		if _, err := db.ExecContext(ctx,
-			`UPDATE zendesk_webhook_events SET processed_at = now() WHERE id = $1`,
+			`UPDATE zendesk_webhook_events SET processed_at = now(), last_error = NULL WHERE id = $1`,
 			e.id,
 		); err != nil {
 			log.Printf("process-zendesk-webhooks: mark event %s processed: %v", e.id, err)
@@ -290,11 +296,10 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 		return fmt.Errorf("resolve reporter: %w", err)
 	}
 	if reporterID == "" {
-		log.Printf("process-zendesk-webhooks: ticket %d: reporter %d not found and could not be fetched — skipping", d.ID, d.RequesterID)
-		return nil
+		return fmt.Errorf("ticket %d: reporter %d not found and could not be fetched", d.ID, d.RequesterID)
 	}
 
-	// Resolve optional assignee agent.
+	// Resolve optional assignee agent. If not in the DB, try the Zendesk API.
 	var assigneeID *string
 	if d.AssigneeID != nil {
 		var agentID string
@@ -303,8 +308,20 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 			orgID, *d.AssigneeID,
 		).Scan(&agentID); err == nil {
 			assigneeID = &agentID
+		} else {
+			fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, *d.AssigneeID)
+			if fetchErr != nil {
+				return fmt.Errorf("fetch assignee %d: %w", *d.AssigneeID, fetchErr)
+			}
+			if fetched != nil && fetched.Role != "end-user" {
+				id, upsertErr := upsertAgent(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
+				if upsertErr != nil {
+					return fmt.Errorf("upsert assignee agent: %w", upsertErr)
+				}
+				assigneeID = &id
+			}
+			// If credentials aren't configured or user isn't an agent, leave assignee_id NULL.
 		}
-		// Unknown assignee is non-fatal; leave assignee_id NULL.
 	}
 
 	// Capture old zendesk_status so we can detect changes for kanban sync.
@@ -357,25 +374,37 @@ func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskT
 }
 
 func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail) error {
+	// Resolve the ticket, fetching from Zendesk if not yet in the DB.
+	var ticketID string
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
+		orgID, d.TicketID,
+	).Scan(&ticketID); err == sql.ErrNoRows {
+		ticket, fetchErr := fetchZendeskTicket(ctx, db, orgID, d.TicketID)
+		if fetchErr != nil {
+			return fmt.Errorf("fetch ticket %d: %w", d.TicketID, fetchErr)
+		}
+		if ticket == nil {
+			return fmt.Errorf("ticket %d not found and Zendesk credentials not configured", d.TicketID)
+		}
+		if upsertErr := handleTicketUpsert(ctx, db, orgID, ticket); upsertErr != nil {
+			return fmt.Errorf("upsert fetched ticket %d: %w", d.TicketID, upsertErr)
+		}
+		if err := db.QueryRowContext(ctx,
+			`SELECT id FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
+			orgID, d.TicketID,
+		).Scan(&ticketID); err != nil {
+			return fmt.Errorf("look up upserted ticket %d: %w", d.TicketID, err)
+		}
+	} else if err != nil {
+		return fmt.Errorf("look up ticket: %w", err)
+	}
+
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback()
-
-	// Resolve the ticket by its Zendesk ID.
-	var ticketID string
-	err = tx.QueryRowContext(ctx,
-		`SELECT id FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
-		orgID, d.TicketID,
-	).Scan(&ticketID)
-	if err == sql.ErrNoRows {
-		// Ticket may not be processed yet; return an error to trigger a retry.
-		return fmt.Errorf("ticket %d not found (may arrive in a later event)", d.TicketID)
-	}
-	if err != nil {
-		return fmt.Errorf("look up ticket: %w", err)
-	}
 
 	// Resolve the author — may be a customer or an agent.
 	var customerAuthorID *string
@@ -642,6 +671,54 @@ func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUser
 		return nil, fmt.Errorf("parse user: %w", err)
 	}
 	return &wrapper.User, nil
+}
+
+// fetchZendeskTicket fetches a single ticket from the Zendesk REST API using
+// the org's stored credentials. Returns nil if credentials are not configured.
+func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) (*webhookTicketDetail, error) {
+	var subdomain, email, apiKey string
+	err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
+		 FROM organizations WHERE id = $1`,
+		orgID,
+	).Scan(&subdomain, &email, &apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("load zendesk creds: %w", err)
+	}
+	if subdomain == "" || email == "" || apiKey == "" {
+		return nil, nil
+	}
+
+	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	url := fmt.Sprintf("https://%s.zendesk.com/api/v2/tickets/%d.json", subdomain, zendeskTicketID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Basic "+creds)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("zendesk request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("zendesk returned %s: %s", resp.Status, respBody)
+	}
+
+	var wrapper struct {
+		Ticket webhookTicketDetail `json:"ticket"`
+	}
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse ticket: %w", err)
+	}
+	return &wrapper.Ticket, nil
 }
 
 // mapZendeskStatus maps a raw Zendesk ticket status string to our
