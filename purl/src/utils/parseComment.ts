@@ -20,6 +20,8 @@ export type CommChannel =
   | "call_summary"
   | "voicemail"
   | "web_chat"
+  | "web_form"
+  | "public_reply"
   | "internal_note"
   | "ticket_merge"
 
@@ -72,20 +74,26 @@ export function classifyBody(body: string): MessageType {
   if (/^Call (to|from):/.test(body)) return "call_summary"
   if (/^Request #\d+/.test(body) || /\bmerged\b/i.test(body)) return "merge_notice"
   if (body.includes("Conversation with Web User")) return "web_chat"
+  // Chat transcripts with (HH:MM:SS) timestamps and a bot or Web User speaker
+  if (/\(\d{1,2}:\d{2}:\d{2}\)\s/.test(body) && (/\bWeb User\b/.test(body) || /\bbot\b/i.test(body))) return "web_chat"
   return "regular_message"
 }
 
-export function classifyCommChannel(channel: string, messageType: MessageType, _role: string): CommChannel {
-  if (channel === "email") return "email_inbound"
-  if (channel === "web") return "email_outbound"
-  if (channel === "sms") return "sms_inbound"
-  // channel === "internal" or "voice" from here
+export function classifyCommChannel(channel: string, messageType: MessageType, role: string): CommChannel {
+  // Structured message types take precedence — body content is the strongest signal
   if (messageType === "outbound_call") return "call_outbound"
   if (messageType === "inbound_call") return "call_inbound"
   if (messageType === "call_summary") return "call_summary"
   if (messageType === "voicemail") return "voicemail"
   if (messageType === "web_chat") return "web_chat"
   if (messageType === "merge_notice") return "ticket_merge"
+
+  // Use channel + role to determine direction
+  if (channel === "email") return role === "agent" ? "email_outbound" : "email_inbound"
+  if (channel === "web") return role === "agent" ? "public_reply" : "web_form"
+  if (channel === "sms") return "sms_inbound"
+  if (channel === "internal") return "internal_note"
+
   return "internal_note"
 }
 
@@ -194,6 +202,32 @@ export function stripHtml(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
     .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+// Whitelist-based HTML sanitiser — preserves structural elements (tables,
+// paragraphs, lists, blockquotes) while stripping scripts, styles, and
+// event handlers. Only used for rich email rendering.
+export function sanitizeHtml(html: string): string {
+  return html
+    // Remove dangerous elements and their content
+    .replace(/<(script|style|iframe|object|embed|form)\b[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(link|meta|input|base)\b[^>]*\/?>/gi, "")
+    // Remove images (tracking pixels, logos — they won't load from our context anyway)
+    .replace(/<img\b[^>]*\/?>/gi, "")
+    // Strip event handlers (onclick, onerror, etc.)
+    .replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    // Strip javascript: and data: URLs in href/src attributes
+    .replace(/(href|src)\s*=\s*"(?:javascript|data):[^"]*"/gi, "$1=\"\"")
+    .replace(/(href|src)\s*=\s*'(?:javascript|data):[^']*'/gi, "$1=''")
+    // Strip style attributes (expression() XSS vector)
+    .replace(/\s+style\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    // Strip class attributes (avoid style injection)
+    .replace(/\s+class\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    // Strip email layout attributes that interfere with our styling
+    .replace(/\s+(?:width|height|cellpadding|cellspacing|bgcolor|align|valign|border)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    // Collapse cells that contain only whitespace/&nbsp; into empty cells
+    .replace(/<(td|th)([^>]*)>\s*(?:&nbsp;\s*)*<\/\1>/gi, "<$1$2></$1>")
     .trim()
 }
 
