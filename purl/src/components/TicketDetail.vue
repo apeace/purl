@@ -101,9 +101,20 @@
                     <span>{{ msg.call.timeOfCall }}</span>
                   </div>
                 </div>
-                <a v-if="msg.call.recordingUrl" :href="msg.call.recordingUrl" target="_blank" class="call-card-recording">
+                <div v-if="msg.hasRecording" class="call-card-audio">
+                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                </div>
+                <a v-else-if="msg.call.recordingUrl" :href="msg.call.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to recording
                 </a>
+                <button v-if="msg.transcript" class="transcript-toggle" @click="toggleTranscript(msg.id)">
+                  <Sparkles :size="13" />
+                  <span>Call Transcript</span>
+                  <ChevronDown :size="14" :class="{ 'chevron-flipped': expandedTranscriptId === msg.id }" />
+                </button>
+                <div v-if="msg.transcript && expandedTranscriptId === msg.id" class="call-card-transcript">
+                  {{ msg.transcript }}
+                </div>
               </div>
 
               <!-- Voicemail card -->
@@ -126,9 +137,20 @@
                     <span>{{ msg.voicemail.location }}</span>
                   </div>
                 </div>
-                <a v-if="msg.voicemail.recordingUrl" :href="msg.voicemail.recordingUrl" target="_blank" class="call-card-recording">
+                <div v-if="msg.hasRecording" class="call-card-audio">
+                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                </div>
+                <a v-else-if="msg.voicemail.recordingUrl" :href="msg.voicemail.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to voicemail
                 </a>
+                <button v-if="msg.transcript" class="transcript-toggle" @click="toggleTranscript(msg.id)">
+                  <Sparkles :size="13" />
+                  <span>Call Transcript</span>
+                  <ChevronDown :size="14" :class="{ 'chevron-flipped': expandedTranscriptId === msg.id }" />
+                </button>
+                <div v-if="msg.transcript && expandedTranscriptId === msg.id" class="call-card-transcript">
+                  {{ msg.transcript }}
+                </div>
               </div>
 
               <!-- Merge notice -->
@@ -691,6 +713,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarS
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
+import { API_KEY_STORAGE_KEY } from "../utils/api"
 import type { Message } from "../stores/useTicketStore"
 import { useTicketStore } from "../stores/useTicketStore"
 import ComingSoon from "./ComingSoon.vue"
@@ -777,6 +800,12 @@ const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
+
+function recordingUrl(msg: Message): string {
+  const base = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
+  const key = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ""
+  return `${base}/tickets/${props.ticketId}/comments/${msg.commentId}/recording?api_key=${encodeURIComponent(key)}`
+}
 
 function commChannelCategory(msg: Message): string {
   const cc = msg.commChannel
@@ -2830,6 +2859,27 @@ onBeforeUnmount(() => {
 
 .call-card-recording:hover {
   background: rgba(99, 102, 241, 0.18);
+}
+
+.call-card-audio {
+  margin-top: 8px;
+}
+
+.call-card-player {
+  width: 100%;
+  height: 32px;
+  border-radius: 6px;
+}
+
+.call-card-transcript {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 /* ── Merge / system notices ─────────────────────────────── */

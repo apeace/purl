@@ -22,12 +22,22 @@ type ticketRow struct {
 }
 
 type ticketCommentRow struct {
-	ID         string    `json:"id"`
-	Body       string    `json:"body"`
-	Channel    string    `json:"channel"`
-	Role       string    `json:"role"`
-	AuthorName string    `json:"author_name"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID                 string    `json:"id"`
+	Body               string    `json:"body"`
+	Channel            string    `json:"channel"`
+	Role               string    `json:"role"`
+	AuthorName         string    `json:"author_name"`
+	CreatedAt          time.Time `json:"created_at"`
+	CallID             *int64    `json:"call_id"`
+	HasRecording       bool      `json:"has_recording"`
+	TranscriptionText  *string   `json:"transcription_text"`
+	TranscriptionStatus *string  `json:"transcription_status"`
+	CallDuration       *int      `json:"call_duration"`
+	CallFrom           *string   `json:"call_from"`
+	CallTo             *string   `json:"call_to"`
+	AnsweredByName     *string   `json:"answered_by_name"`
+	CallLocation       *string   `json:"call_location"`
+	CallStartedAt      *time.Time `json:"call_started_at"`
 }
 
 // @Summary     List tickets
@@ -107,7 +117,17 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	rows, err := a.db.QueryContext(r.Context(), `
 		SELECT tc.id, tc.body, tc.channel::text, tc.role::text,
 		       COALESCE(a.name, c.name, '') AS author_name,
-		       tc.created_at
+		       tc.created_at,
+		       tc.call_id,
+		       tc.recording_url IS NOT NULL AS has_recording,
+		       tc.transcription_text,
+		       tc.transcription_status,
+		       tc.call_duration,
+		       tc.call_from,
+		       tc.call_to,
+		       tc.answered_by_name,
+		       tc.call_location,
+		       tc.call_started_at
 		FROM ticket_comments tc
 		LEFT JOIN agents a ON a.id = tc.agent_author_id
 		LEFT JOIN customers c ON c.id = tc.customer_author_id
@@ -124,7 +144,10 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	comments := []ticketCommentRow{}
 	for rows.Next() {
 		var c ticketCommentRow
-		if err := rows.Scan(&c.ID, &c.Body, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Body, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt,
+			&c.CallID, &c.HasRecording, &c.TranscriptionText, &c.TranscriptionStatus,
+			&c.CallDuration, &c.CallFrom, &c.CallTo, &c.AnsweredByName,
+			&c.CallLocation, &c.CallStartedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTicketComments scan: %v", err)
 			return
