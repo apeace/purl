@@ -207,7 +207,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	// Step 2: Fetch tickets
 	log.Println("fetching tickets...")
-	ticketsBody, err := ZendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=100")
+	ticketsBody, err := ZendeskGet(subdomain, creds, "/api/v2/tickets.json?sort_by=created_at&sort_order=desc&per_page=50")
 	if err != nil {
 		return fmt.Errorf("fetch tickets: %w", err)
 	}
@@ -235,6 +235,9 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 		endUserIDSet[ticket.RequesterID] = true
 		for _, c := range commentsResp.Comments {
+			if c.AuthorID <= 0 {
+				continue // system user; handled separately during comment import
+			}
 			// Only collect IDs of end-users; agents are already fetched above
 			if _, isAgent := agentsByZendeskID[c.AuthorID]; !isAgent {
 				endUserIDSet[c.AuthorID] = true
@@ -261,27 +264,41 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 			return fmt.Errorf("parse users: %w", err)
 		}
 
-		// Step 5: Insert customers
+		// Step 5: Insert customers. Also upsert any agent-role users that were
+		// missed in step 1 (e.g. bot/automation accounts, or agents beyond the
+		// agents fetch limit) so their comments can be attributed correctly.
 		for _, u := range usersResp.Users {
-			if u.Role != "end-user" {
-				continue
+			if u.Role == "end-user" {
+				var customerID string
+				err := db.QueryRow(
+					`INSERT INTO customers (name, org_id, zendesk_user_id) VALUES ($1, $2, $3) RETURNING id`,
+					u.Name, orgID, u.ID,
+				).Scan(&customerID)
+				if err != nil {
+					return fmt.Errorf("insert customer %s: %w", u.Email, err)
+				}
+				_, err = db.Exec(
+					`INSERT INTO customer_emails (customer_id, email, verified) VALUES ($1, $2, false)`,
+					customerID, u.Email,
+				)
+				if err != nil {
+					return fmt.Errorf("insert customer email %s: %w", u.Email, err)
+				}
+				customersByZendeskID[u.ID] = customerID
+			} else if _, alreadyImported := agentsByZendeskID[u.ID]; !alreadyImported {
+				var agentID string
+				err := db.QueryRow(
+					`INSERT INTO agents (email, name, org_id, zendesk_user_id)
+					 VALUES ($1, $2, $3, $4)
+					 ON CONFLICT (org_id, zendesk_user_id) DO UPDATE SET name = EXCLUDED.name, email = EXCLUDED.email
+					 RETURNING id`,
+					u.Email, u.Name, orgID, u.ID,
+				).Scan(&agentID)
+				if err != nil {
+					return fmt.Errorf("insert agent %s: %w", u.Name, err)
+				}
+				agentsByZendeskID[u.ID] = agentID
 			}
-			var customerID string
-			err := db.QueryRow(
-				`INSERT INTO customers (name, org_id, zendesk_user_id) VALUES ($1, $2, $3) RETURNING id`,
-				u.Name, orgID, u.ID,
-			).Scan(&customerID)
-			if err != nil {
-				return fmt.Errorf("insert customer %s: %w", u.Email, err)
-			}
-			_, err = db.Exec(
-				`INSERT INTO customer_emails (customer_id, email, verified) VALUES ($1, $2, false)`,
-				customerID, u.Email,
-			)
-			if err != nil {
-				return fmt.Errorf("insert customer email %s: %w", u.Email, err)
-			}
-			customersByZendeskID[u.ID] = customerID
 		}
 	}
 	log.Printf("inserted %d customers", len(customersByZendeskID))
@@ -327,6 +344,7 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 	// Step 7: Insert comments with correct timestamps
 	commentsInserted := 0
+	var systemAgentID string // resolved lazily on first system-authored comment
 	for zendeskTicketID, comments := range allComments {
 		ticketID, ok := ticketsByZendeskID[zendeskTicketID]
 		if !ok {
@@ -338,7 +356,18 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 			var agentAuthorID *string
 			var role string
 
-			if id, ok := customersByZendeskID[c.AuthorID]; ok {
+			if c.AuthorID <= 0 {
+				// Zendesk system/automation user. Resolve lazily and cache.
+				if systemAgentID == "" {
+					id, err := resolveSystemAgent(context.Background(), db, orgID)
+					if err != nil {
+						return fmt.Errorf("resolve system agent: %w", err)
+					}
+					systemAgentID = id
+				}
+				agentAuthorID = &systemAgentID
+				role = "agent"
+			} else if id, ok := customersByZendeskID[c.AuthorID]; ok {
 				customerAuthorID = &id
 				role = "customer"
 			} else if id, ok := agentsByZendeskID[c.AuthorID]; ok {
