@@ -1,5 +1,5 @@
 import type { AppTicketCommentRow, AppTicketRow } from "@purl/lib"
-import { getTickets, getTicketsByTicketIdComments } from "@purl/lib"
+import { getOrg, getTickets, getTicketsByTicketIdComments } from "@purl/lib"
 import { defineStore } from "pinia"
 import { computed, reactive, ref } from "vue"
 import type { CallData, CommChannel, MergeData, MessageType, VoicemailData } from "../utils/parseComment"
@@ -35,6 +35,7 @@ export interface Ticket {
   name: string
   company: string
   ticketId: string
+  zendeskTicketId?: number
   subject: string
   description: string
   createdAt: string
@@ -113,6 +114,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     name: reporterName,
     company: "",
     ticketId: zendeskId ? `#${zendeskId}` : `#${id.slice(0, 6).toUpperCase()}`,
+    zendeskTicketId: zendeskId ?? undefined,
     subject: t.title ?? "",
     description: stripHtml(t.description ?? ""),
     createdAt,
@@ -144,6 +146,7 @@ export const useTicketStore = defineStore("tickets", () => {
   // ── State ─────────────────────────────────────────────
 
   const tickets = ref<Ticket[]>([])
+  const zendeskSubdomain = ref("")
 
   // TODO: derive resolvedToday from real ticket data instead of hardcoding a starting value
   const resolvedToday = ref(8)
@@ -320,9 +323,14 @@ export const useTicketStore = defineStore("tickets", () => {
 
   function loadTickets() {
     if (!loadPromise) {
-      loadPromise = getTickets().then(({ data }) => {
-        if (data) tickets.value = data.map(toTicket)
-      })
+      loadPromise = Promise.all([
+        getTickets().then(({ data }) => {
+          if (data) tickets.value = data.map(toTicket)
+        }),
+        getOrg().then(({ data }) => {
+          if (data?.zendesk_subdomain) zendeskSubdomain.value = data.zendesk_subdomain
+        }),
+      ]).then(() => {})
     }
     return loadPromise
   }
@@ -487,6 +495,7 @@ export const useTicketStore = defineStore("tickets", () => {
     setTemperature,
     sortBy,
     sortedTickets,
+    zendeskSubdomain,
     tickets,
     toggleStar,
     uniqueAssignees,

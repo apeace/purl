@@ -25,9 +25,10 @@ type contextKey string
 const orgContextKey contextKey = "org"
 
 type org struct {
-	ID     string
-	Name   string
-	APIKey string
+	ID                string
+	Name              string
+	APIKey            string
+	ZendeskSubdomain  string
 }
 
 func orgFromContext(ctx context.Context) org {
@@ -44,8 +45,8 @@ func (a *App) requireAPIKey(next http.Handler) http.Handler {
 
 		var o org
 		err := a.db.QueryRowContext(r.Context(), `
-			SELECT id, name, api_key FROM organizations WHERE api_key = $1
-		`, key).Scan(&o.ID, &o.Name, &o.APIKey)
+			SELECT id, name, api_key, COALESCE(zendesk_subdomain, '') FROM organizations WHERE api_key = $1
+		`, key).Scan(&o.ID, &o.Name, &o.APIKey, &o.ZendeskSubdomain)
 		if err == sql.ErrNoRows {
 			http.Error(w, "invalid api key", http.StatusUnauthorized)
 			return

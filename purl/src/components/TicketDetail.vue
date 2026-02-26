@@ -35,6 +35,18 @@
       </button>
     </div>
 
+    <!-- Zendesk link -->
+    <a
+      v-if="zendeskUrl"
+      :href="zendeskUrl"
+      target="_blank"
+      rel="noopener"
+      class="zendesk-link"
+    >
+      <ExternalLink :size="12" />
+      <span>View in Zendesk</span>
+    </a>
+
     <!-- Tab: Communications -->
     <template v-if="activeTab === 'comms'">
       <div ref="messagesEl" class="thread-messages">
@@ -723,7 +735,7 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, ExternalLink, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
@@ -743,7 +755,7 @@ const emit = defineEmits<{
 }>()
 
 const ticketStore = useTicketStore()
-const { tickets } = storeToRefs(ticketStore)
+const { tickets, zendeskSubdomain } = storeToRefs(ticketStore)
 const { addTag, loadComments, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
 
 const aiStore = useAiStore()
@@ -821,6 +833,13 @@ const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
+
+const zendeskUrl = computed(() => {
+  const sub = zendeskSubdomain.value
+  const zdId = ticket.value?.zendeskTicketId
+  if (!sub || !zdId) return null
+  return `https://${sub}.zendesk.com/agent/tickets/${zdId}`
+})
 
 function recordingUrl(msg: Message): string {
   const base = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
@@ -1573,6 +1592,23 @@ onBeforeUnmount(() => {
   padding: 6px 24px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+}
+
+.zendesk-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 24px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.45);
+  text-decoration: none;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.zendesk-link:hover {
+  color: #94a3b8;
 }
 
 .tab-btn {
