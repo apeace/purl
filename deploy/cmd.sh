@@ -16,8 +16,15 @@ fi
 CMD="$1"
 shift
 
+EXTRA_ARGS=()
+CLIENTS_FILE="$SCRIPT_DIR/../api/clients.json"
+if [ -f "$CLIENTS_FILE" ]; then
+  EXTRA_ARGS+=("-e" "PURL_CLIENTS_JSON=$(tr -d '\n' < "$CLIENTS_FILE")")
+fi
+
 docker compose \
   -f "$SCRIPT_DIR/docker-compose.prod.yml" \
   run --rm \
+  "${EXTRA_ARGS[@]}" \
   api \
   ./bin/"$CMD" "$@"
