@@ -105,7 +105,7 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 
 func buildSummaryPrompt(title, description string, commentLines []string) string {
 	var b strings.Builder
-	b.WriteString("Summarize this customer support ticket in 1-2 sentences. Focus on the main issue and current status.\n\n")
+	b.WriteString("Summarize this customer support ticket in 1-2 short, direct sentences. State only the issue and current status — no intro phrase like \"The customer\" or \"This ticket\". Output only the summary, nothing else.\n\n")
 	b.WriteString("Title: ")
 	b.WriteString(title)
 	b.WriteString("\nDescription: ")
