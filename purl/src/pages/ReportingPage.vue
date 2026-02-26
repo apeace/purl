@@ -215,7 +215,7 @@ const volumeAreaPath = computed(() =>
 const circumference = 2 * Math.PI * 46
 
 const statusCounts = computed(() => {
-  const counts: Record<string, number> = { new: 0, open: 0, in_progress: 0, escalated: 0 }
+  const counts: Record<string, number> = { new: 0, open: 0, pending: 0, escalated: 0 }
   for (const t of tickets.value) {
     if (counts[t.status] !== undefined) counts[t.status]++
   }
@@ -231,7 +231,7 @@ const donutSegments = computed(() => {
   const items = [
     { label: "New", count: statusCounts.value.new, color: STATUS_COLORS.new },
     { label: "Open", count: statusCounts.value.open, color: STATUS_COLORS.open },
-    { label: "In Progress", count: statusCounts.value.in_progress, color: STATUS_COLORS.in_progress },
+    { label: "Pending", count: statusCounts.value.pending, color: STATUS_COLORS.pending },
     { label: "Escalated", count: statusCounts.value.escalated, color: STATUS_COLORS.escalated },
   ]
   let offset = 0
