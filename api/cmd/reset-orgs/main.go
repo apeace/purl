@@ -48,9 +48,21 @@ func generateHex() string {
 }
 
 func resetOrg(db *sql.DB, c client) {
-	// Drop existing org if present; cascades to all org data.
-	if _, err := db.Exec(`DELETE FROM organizations WHERE slug = $1`, c.Slug); err != nil {
-		log.Fatalf("[%s] delete org: %v", c.Slug, err)
+	// Wipe all org data in FK-safe order. Using a subquery for org_id means
+	// each statement is a no-op if the org doesn't exist yet.
+	// Cascades: tickets→ticket_comments,board_tickets; customers→customer_emails,customer_phones; boards→board_columns
+	wipes := []string{
+		`DELETE FROM zendesk_webhook_events WHERE org_id = (SELECT id FROM organizations WHERE slug = $1)`,
+		`DELETE FROM tickets       WHERE org_id = (SELECT id FROM organizations WHERE slug = $1)`,
+		`DELETE FROM customers     WHERE org_id = (SELECT id FROM organizations WHERE slug = $1)`,
+		`DELETE FROM agents        WHERE org_id = (SELECT id FROM organizations WHERE slug = $1)`,
+		`DELETE FROM boards        WHERE org_id = (SELECT id FROM organizations WHERE slug = $1)`,
+		`DELETE FROM organizations WHERE slug = $1`,
+	}
+	for _, stmt := range wipes {
+		if _, err := db.Exec(stmt, c.Slug); err != nil {
+			log.Fatalf("[%s] wipe: %v", c.Slug, err)
+		}
 	}
 
 	apiKey := c.APIKey
