@@ -78,21 +78,17 @@ Certbot renews certificates automatically every 12 hours, but nginx must be relo
 
 ## Deploying Updates
 
-All commands run from `/home/ubuntu/purl/deploy` on the server. `d.sh` is a thin wrapper around `docker compose -f docker-compose.prod.yml`.
+Deployments are automated via GitHub Actions. Pushing to `main` triggers `.github/workflows/deploy.yml`, which SSHes into the server, pulls the latest code, and rebuilds/restarts all services.
 
-Rebuild and restart only the changed service without downtime to others:
+For manual intervention, all commands run from `/home/ubuntu/purl/deploy` on the server. `d.sh` is a thin wrapper around `docker compose -f docker-compose.prod.yml`.
+
+Rebuild and restart a specific service:
 
 ```sh
 cd /home/ubuntu/purl
 git pull
-
 cd deploy
-
-# Redeploy the API:
 ./d.sh up -d --build api
-
-# Redeploy the frontend (rebuilds the nginx image):
-./d.sh up -d --build nginx
 ```
 
 To rebuild and restart everything:
