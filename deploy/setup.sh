@@ -64,6 +64,32 @@ if sudo ufw status | grep -q "Status: active"; then
   sudo ufw reload
 fi
 
+echo "==> Setting up bash aliases for ubuntu user..."
+cat >> /home/ubuntu/.bashrc <<'EOF'
+
+export EDITOR="vi"
+
+# Git aliases
+alias \
+  c='git commit' \
+  s='git status' \
+  ch='git checkout' \
+  b='git branch' \
+  d='git diff' \
+  pull='git pull' \
+  push='git push'
+
+# Tmux
+# See: https://tmuxcheatsheet.com/
+# See also: https://hamvocke.com/blog/a-quick-and-easy-guide-to-tmux/
+
+# Create or attach to session with given name, e.g. "sesh work"
+alias o='tmux new-session -A -s'
+
+# Kill the given tmux session, e.g. "tmuxrm work"
+alias tmuxkill='tmux kill-session -t'
+EOF
+
 echo "==> Cloning repository to $REPO_DIR..."
 if [ -d "$REPO_DIR" ]; then
   echo "   Directory already exists, skipping clone."

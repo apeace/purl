@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"embed"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -56,6 +57,9 @@ func getEnv(key, fallback string) string {
 // @in              header
 // @name            x-api-key
 func main() {
+	noMigrations := flag.Bool("no-migrations", false, "skip automatic migrations on startup")
+	flag.Parse()
+
 	cfg := loadConfig()
 
 	db, err := sql.Open("pgx", cfg.DatabaseURL)
@@ -69,14 +73,16 @@ func main() {
 	}
 	log.Println("connected to postgres")
 
-	goose.SetBaseFS(migrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		log.Fatalf("goose set dialect: %v", err)
+	if !*noMigrations {
+		goose.SetBaseFS(migrations)
+		if err := goose.SetDialect("postgres"); err != nil {
+			log.Fatalf("goose set dialect: %v", err)
+		}
+		if err := goose.Up(db, "migrations"); err != nil {
+			log.Fatalf("goose up: %v", err)
+		}
+		log.Println("migrations applied")
 	}
-	if err := goose.Up(db, "migrations"); err != nil {
-		log.Fatalf("goose up: %v", err)
-	}
-	log.Println("migrations applied")
 
 	opts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
