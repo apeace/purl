@@ -75,7 +75,7 @@ type webhookCommentDetail struct {
 	AuthorID  flexInt64         `json:"author_id"`
 	Type      string            `json:"type"`
 	Body      string            `json:"body"`
-    HtmlBody  string             `json:"html_body"`
+	HtmlBody  string            `json:"html_body"`
 	Public    bool              `json:"public"`
 	Via       webhookCommentVia `json:"via"`
 	CreatedAt time.Time         `json:"created_at"`
@@ -525,8 +525,10 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 		return fmt.Errorf("upsert comment: %w", err)
 	}
 
+	// Reset error count so tickets with new comments get a fresh attempt,
+	// even if they previously hit the error limit.
 	if _, err = tx.ExecContext(ctx,
-		`UPDATE tickets SET ai_summary_stale = TRUE WHERE id = $1`, ticketID,
+		`UPDATE tickets SET ai_summary_stale = TRUE, ai_summary_error_count = 0 WHERE id = $1`, ticketID,
 	); err != nil {
 		return fmt.Errorf("mark ticket stale: %w", err)
 	}
