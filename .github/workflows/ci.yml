@@ -59,6 +59,20 @@ jobs:
 
       - run: npm run build -w @purl/purl
 
+  migrations:
+    name: Check migrations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for duplicate migration numbers
+        run: |
+          duplicates=$(ls api/migrations/*.sql | xargs -I{} basename {} | sed 's/_.*//' | sort | uniq -d)
+          if [ -n "$duplicates" ]; then
+            echo "Duplicate migration numbers: $duplicates"
+            exit 1
+          fi
+
   docker:
     name: Build Docker images
     runs-on: ubuntu-latest
