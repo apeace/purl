@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"purl/api/internal/ratelimit"
 )
 
 // ── Zendesk webhook payload types ────────────────────────────────────────────
@@ -175,8 +176,8 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 // call. Unsupported event types are silently acknowledged and also marked as
 // processed to prevent them from accumulating.
 //
-// Returns the number of events that were marked as processed.
-func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
+// limiter may be nil to skip rate limiting. Returns the number of events marked as processed.
+func ProcessPendingWebhooks(ctx context.Context, db *sql.DB, limiter *ratelimit.Limiter) (int, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, org_id, event_type, payload
 		FROM zendesk_webhook_events
@@ -210,7 +211,7 @@ func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
 
 	processed := 0
 	for _, e := range events {
-		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload); err != nil {
+		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload, limiter); err != nil {
 			log.Printf("process-zendesk-webhooks: event %s (%s) failed: %v — will retry", e.id, e.eventType, err)
 			if _, dbErr := db.ExecContext(ctx,
 				`UPDATE zendesk_webhook_events SET last_error = $1 WHERE id = $2`,
@@ -235,7 +236,7 @@ func ProcessPendingWebhooks(ctx context.Context, db *sql.DB) (int, error) {
 // processZendeskEvent dispatches a single webhook event to the appropriate
 // handler based on event_type. Unknown types are silently ignored (return nil)
 // so the caller can mark them as processed without logging noise.
-func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType string, payload []byte) error {
+func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType string, payload []byte, limiter *ratelimit.Limiter) error {
 	var envelope zendeskWebhookEnvelope
 	if err := json.Unmarshal(payload, &envelope); err != nil {
 		return fmt.Errorf("unmarshal envelope: %w", err)
@@ -247,7 +248,7 @@ func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType strin
 		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
 			return fmt.Errorf("unmarshal ticket detail: %w", err)
 		}
-		return handleTicketUpsert(ctx, db, orgID, &d)
+		return handleTicketUpsert(ctx, db, orgID, &d, limiter)
 
 	case "zen:event-type:ticket.deleted":
 		var d webhookTicketDeletedDetail
@@ -261,7 +262,7 @@ func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType strin
 		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
 			return fmt.Errorf("unmarshal comment detail: %w", err)
 		}
-		return handleCommentCreated(ctx, db, orgID, &d)
+		return handleCommentCreated(ctx, db, orgID, &d, limiter)
 
 	case "zen:event-type:comment.updated":
 		var d webhookCommentDetail
@@ -286,7 +287,7 @@ func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType strin
 
 // ── Event handlers ────────────────────────────────────────────────────────────
 
-func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookTicketDetail) error {
+func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookTicketDetail, limiter *ratelimit.Limiter) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -294,7 +295,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 	defer tx.Rollback()
 
 	// Resolve reporter customer. If missing, fetch from Zendesk and upsert.
-	reporterID, err := resolveOrFetchCustomer(ctx, db, tx, orgID, d.RequesterID)
+	reporterID, err := resolveOrFetchCustomer(ctx, db, tx, orgID, d.RequesterID, limiter)
 	if err != nil {
 		return fmt.Errorf("resolve reporter: %w", err)
 	}
@@ -312,7 +313,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 		).Scan(&agentID); err == nil {
 			assigneeID = &agentID
 		} else {
-			fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, *d.AssigneeID)
+			fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, *d.AssigneeID, limiter)
 			if fetchErr != nil {
 				return fmt.Errorf("fetch assignee %d: %w", *d.AssigneeID, fetchErr)
 			}
@@ -374,7 +375,7 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 	// send a separate comment.created event for the initial message when a
 	// ticket is first created). The insert is idempotent, so re-syncing on
 	// ticket.updated is safe.
-	if err := syncTicketComments(ctx, db, orgID, d.ID); err != nil {
+	if err := syncTicketComments(ctx, db, orgID, d.ID, limiter); err != nil {
 		return fmt.Errorf("sync comments for ticket %d: %w", d.ID, err)
 	}
 
@@ -389,21 +390,21 @@ func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskT
 	return err
 }
 
-func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail) error {
+func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail, limiter *ratelimit.Limiter) error {
 	// Resolve the ticket, fetching from Zendesk if not yet in the DB.
 	var ticketID string
 	if err := db.QueryRowContext(ctx,
 		`SELECT id FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
 		orgID, d.TicketID,
 	).Scan(&ticketID); err == sql.ErrNoRows {
-		ticket, fetchErr := fetchZendeskTicket(ctx, db, orgID, d.TicketID)
+		ticket, fetchErr := fetchZendeskTicket(ctx, db, orgID, d.TicketID, limiter)
 		if fetchErr != nil {
 			return fmt.Errorf("fetch ticket %d: %w", d.TicketID, fetchErr)
 		}
 		if ticket == nil {
 			return fmt.Errorf("ticket %d not found and Zendesk credentials not configured", d.TicketID)
 		}
-		if upsertErr := handleTicketUpsert(ctx, db, orgID, ticket); upsertErr != nil {
+		if upsertErr := handleTicketUpsert(ctx, db, orgID, ticket, limiter); upsertErr != nil {
 			return fmt.Errorf("upsert fetched ticket %d: %w", d.TicketID, upsertErr)
 		}
 		if err := db.QueryRowContext(ctx,
@@ -455,7 +456,7 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 				role = "agent"
 			} else {
 				// Author unknown — try fetching from Zendesk before giving up.
-				fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, d.AuthorID)
+				fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, d.AuthorID, limiter)
 				if fetchErr != nil || fetched == nil {
 					// Return an error so this event is retried after the user arrives.
 					return fmt.Errorf("author %d not found (may arrive in a later event)", d.AuthorID)
@@ -571,7 +572,7 @@ func handleUserUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookU
 // resolveOrFetchCustomer returns the purl customer ID for a given Zendesk user ID.
 // If not found in the DB, it fetches the user from the Zendesk REST API and upserts.
 // Returns ("", nil) if the user exists in Zendesk but is not an end-user.
-func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID string, zendeskUserID flexInt64) (string, error) {
+func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID string, zendeskUserID flexInt64, limiter *ratelimit.Limiter) (string, error) {
 	var customerID string
 	err := tx.QueryRowContext(ctx,
 		`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
@@ -584,7 +585,7 @@ func resolveOrFetchCustomer(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID s
 		return "", fmt.Errorf("look up customer: %w", err)
 	}
 
-	user, err := fetchZendeskUser(ctx, db, orgID, zendeskUserID)
+	user, err := fetchZendeskUser(ctx, db, orgID, zendeskUserID, limiter)
 	if err != nil {
 		return "", fmt.Errorf("fetch zendesk user %d: %w", zendeskUserID, err)
 	}
@@ -709,7 +710,7 @@ func syncTicketToDefaultKanban(ctx context.Context, tx *sql.Tx, orgID, ticketID,
 
 // fetchZendeskUser fetches a single user from the Zendesk REST API using the
 // org's stored credentials. Returns nil if credentials are not configured.
-func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUserID flexInt64) (*webhookUserDetail, error) {
+func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUserID flexInt64, limiter *ratelimit.Limiter) (*webhookUserDetail, error) {
 	var subdomain, email, apiKey string
 	err := db.QueryRowContext(ctx,
 		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
@@ -724,6 +725,11 @@ func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUser
 	}
 
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	if limiter != nil {
+		if err := limiter.Wait(ctx, creds); err != nil {
+			return nil, err
+		}
+	}
 	url := fmt.Sprintf("https://%s.zendesk.com/api/v2/users/%d.json", subdomain, zendeskUserID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -757,7 +763,7 @@ func fetchZendeskUser(ctx context.Context, db *sql.DB, orgID string, zendeskUser
 
 // fetchZendeskTicket fetches a single ticket from the Zendesk REST API using
 // the org's stored credentials. Returns nil if credentials are not configured.
-func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) (*webhookTicketDetail, error) {
+func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64, limiter *ratelimit.Limiter) (*webhookTicketDetail, error) {
 	var subdomain, email, apiKey string
 	err := db.QueryRowContext(ctx,
 		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
@@ -772,6 +778,11 @@ func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 	}
 
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	if limiter != nil {
+		if err := limiter.Wait(ctx, creds); err != nil {
+			return nil, err
+		}
+	}
 	url := fmt.Sprintf("https://%s.zendesk.com/api/v2/tickets/%d.json", subdomain, zendeskTicketID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -806,7 +817,7 @@ func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 // fetchZendeskTicketComments fetches all comments for a ticket from the Zendesk
 // REST API using the org's stored credentials. Returns nil if credentials are
 // not configured.
-func fetchZendeskTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) ([]webhookCommentDetail, error) {
+func fetchZendeskTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64, limiter *ratelimit.Limiter) ([]webhookCommentDetail, error) {
 	var subdomain, email, apiKey string
 	err := db.QueryRowContext(ctx,
 		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
@@ -821,6 +832,11 @@ func fetchZendeskTicketComments(ctx context.Context, db *sql.DB, orgID string, z
 	}
 
 	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	if limiter != nil {
+		if err := limiter.Wait(ctx, creds); err != nil {
+			return nil, err
+		}
+	}
 	url := fmt.Sprintf("https://%s.zendesk.com/api/v2/tickets/%d/comments.json", subdomain, zendeskTicketID)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -874,8 +890,8 @@ func fetchZendeskTicketComments(ctx context.Context, db *sql.DB, orgID string, z
 
 // syncTicketComments fetches all comments for a ticket from the Zendesk API
 // and upserts each one. Returns nil if credentials are not configured.
-func syncTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) error {
-	comments, err := fetchZendeskTicketComments(ctx, db, orgID, zendeskTicketID)
+func syncTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64, limiter *ratelimit.Limiter) error {
+	comments, err := fetchZendeskTicketComments(ctx, db, orgID, zendeskTicketID, limiter)
 	if err != nil {
 		return fmt.Errorf("fetch comments: %w", err)
 	}
@@ -883,7 +899,7 @@ func syncTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 		return nil // credentials not configured
 	}
 	for _, c := range comments {
-		if err := handleCommentCreated(ctx, db, orgID, &c); err != nil {
+		if err := handleCommentCreated(ctx, db, orgID, &c, limiter); err != nil {
 			return fmt.Errorf("upsert comment %d: %w", c.ID, err)
 		}
 	}

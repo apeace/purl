@@ -8,10 +8,13 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-
-	"purl/api/internal/app"
+	"strconv"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
+	"purl/api/internal/app"
+	"purl/api/internal/ratelimit"
 )
 
 type client struct {
@@ -47,7 +50,7 @@ func generateHex() string {
 	return hex.EncodeToString(b)
 }
 
-func resetOrg(db *sql.DB, c client) {
+func resetOrg(db *sql.DB, limiter *ratelimit.Limiter, c client) {
 	// Wipe all org data in FK-safe order. Using a subquery for org_id means
 	// each statement is a no-op if the org doesn't exist yet.
 	// Cascades: tickets→ticket_comments,board_tickets; customers→customer_emails,customer_phones; boards→board_columns
@@ -118,7 +121,7 @@ func resetOrg(db *sql.DB, c client) {
 	}
 	log.Printf("[%s] created org (id: %s)", c.Slug, orgID)
 
-	if err := app.ImportZendeskData(context.Background(), db, orgID, c.ZendeskSubdomain, c.ZendeskEmail, c.ZendeskAPIKey); err != nil {
+	if err := app.ImportZendeskData(context.Background(), db, limiter, orgID, c.ZendeskSubdomain, c.ZendeskEmail, c.ZendeskAPIKey); err != nil {
 		log.Fatalf("[%s] import zendesk data: %v", c.Slug, err)
 	}
 }
@@ -142,6 +145,11 @@ func main() {
 	if dsn == "" {
 		log.Fatal("DATABASE_URL environment variable is required")
 	}
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		log.Fatal("REDIS_URL environment variable is required")
+	}
+
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -151,9 +159,29 @@ func main() {
 		log.Fatalf("ping db: %v", err)
 	}
 
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		log.Fatalf("parse redis url: %v", err)
+	}
+	rdb := redis.NewClient(opts)
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Fatalf("ping redis: %v", err)
+	}
+
+	maxReqs := int64(100)
+	if s := os.Getenv("ZENDESK_RATE_LIMIT"); s != "" {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			log.Fatalf("invalid ZENDESK_RATE_LIMIT: %v", err)
+		}
+		maxReqs = n
+	}
+	limiter := ratelimit.New(rdb, "zendesk", maxReqs, time.Minute)
+	log.Printf("Zendesk rate limit: %d req/min", maxReqs)
+
 	for _, c := range clients {
 		log.Printf("resetting org %q...", c.Slug)
-		resetOrg(db, c)
+		resetOrg(db, limiter, c)
 	}
 	log.Printf("done — reset %d org(s)", len(clients))
 }
