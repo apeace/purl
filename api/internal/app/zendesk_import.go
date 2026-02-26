@@ -76,6 +76,7 @@ type ZendeskComment struct {
 	ID        int64              `json:"id"`
 	Type      string             `json:"type"`
 	Body      string             `json:"body"`
+	HtmlBody  string             `json:"html_body"`
 	AuthorID  int64              `json:"author_id"`
 	Public    bool               `json:"public"`
 	Via       ZendeskCommentVia  `json:"via"`
@@ -97,6 +98,13 @@ type ZendeskUser struct {
 type ZendeskUsersResponse struct {
 	Users    []ZendeskUser `json:"users"`
 	NextPage *string       `json:"next_page"`
+}
+
+func nilIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 func ZendeskGet(subdomain, creds, path string) ([]byte, error) {
@@ -405,12 +413,12 @@ func ImportZendeskData(_ context.Context, db *sql.DB, orgID, subdomain, email, a
 
 			_, err := db.Exec(
 				`INSERT INTO ticket_comments
-					(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at,
+					(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
 					 call_id, recording_url, transcription_text, transcription_status, call_duration,
 					 call_from, call_to, answered_by_name, call_location, call_started_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8,
-				         $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body, mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
+				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
+				         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+				ticketID, customerAuthorID, agentAuthorID, role, c.Body, nilIfEmpty(c.HtmlBody), mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
 				callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
 				callFrom, callTo, answeredByName, callLocation, callStartedAt,
 			)

@@ -24,6 +24,7 @@ type ticketRow struct {
 type ticketCommentRow struct {
 	ID                 string    `json:"id"`
 	Body               string    `json:"body"`
+	HtmlBody           *string   `json:"html_body"`
 	Channel            string    `json:"channel"`
 	Role               string    `json:"role"`
 	AuthorName         string    `json:"author_name"`
@@ -115,7 +116,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT tc.id, tc.body, tc.channel::text, tc.role::text,
+		SELECT tc.id, tc.body, tc.html_body, tc.channel::text, tc.role::text,
 		       COALESCE(a.name, c.name, '') AS author_name,
 		       tc.created_at,
 		       tc.call_id,
@@ -144,7 +145,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	comments := []ticketCommentRow{}
 	for rows.Next() {
 		var c ticketCommentRow
-		if err := rows.Scan(&c.ID, &c.Body, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt,
+		if err := rows.Scan(&c.ID, &c.Body, &c.HtmlBody, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt,
 			&c.CallID, &c.HasRecording, &c.TranscriptionText, &c.TranscriptionStatus,
 			&c.CallDuration, &c.CallFrom, &c.CallTo, &c.AnsweredByName,
 			&c.CallLocation, &c.CallStartedAt); err != nil {

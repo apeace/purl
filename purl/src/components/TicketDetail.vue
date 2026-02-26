@@ -35,6 +35,18 @@
       </button>
     </div>
 
+    <!-- Zendesk link -->
+    <a
+      v-if="zendeskUrl"
+      :href="zendeskUrl"
+      target="_blank"
+      rel="noopener"
+      class="zendesk-link"
+    >
+      <ExternalLink :size="12" />
+      <span>View in Zendesk</span>
+    </a>
+
     <!-- Tab: Communications -->
     <template v-if="activeTab === 'comms'">
       <div ref="messagesEl" class="thread-messages">
@@ -56,10 +68,13 @@
             <div v-if="msg.type !== 'recording'" class="msg-bubble" :class="{ 'msg-bubble--system': msg.messageType === 'merge_notice' }">
               <div class="msg-header">
                 <span class="msg-sender">{{ msg.authorName || (msg.from === 'agent' ? 'You' : ticket.name) }}</span>
+                <span v-if="msg.automated" class="msg-automated">via automation</span>
                 <span class="msg-channel" :class="`msg-channel--${commChannelCategory(msg)}`">
                   <Lock v-if="msg.commChannel === 'internal_note'" :size="10" />
                   <MessageCircle v-else-if="msg.commChannel === 'web_chat'" :size="10" />
                   <Mail v-else-if="msg.commChannel?.startsWith('email')" :size="10" />
+                  <Send v-else-if="msg.commChannel === 'public_reply'" :size="10" />
+                  <Globe v-else-if="msg.commChannel === 'web_form'" :size="10" />
                   <MessageSquare v-else-if="msg.commChannel === 'sms_inbound'" :size="10" />
                   <Phone v-else-if="msg.commChannel?.startsWith('call') || msg.commChannel === 'voicemail'" :size="10" />
                   <Globe v-else-if="msg.commChannel === 'ticket_merge'" :size="10" />
@@ -101,8 +116,15 @@
                     <span>{{ msg.call.timeOfCall }}</span>
                   </div>
                 </div>
-                <div v-if="msg.hasRecording" class="call-card-audio">
-                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                <div v-if="msg.hasRecording" class="call-audio-player">
+                  <button class="call-audio-play-btn" @click="toggleAudioPlayback(msg)">
+                    <Pause v-if="audioIsPlaying(msg)" :size="14" />
+                    <Play v-else :size="14" />
+                  </button>
+                  <div class="call-audio-track" @click="seekAudio($event)">
+                    <div class="call-audio-progress" :style="{ width: `${audioProgressFor(msg) * 100}%` }" />
+                  </div>
+                  <span class="call-audio-time">{{ audioTimeDisplay(msg) }} / {{ audioDurationDisplay(msg) }}</span>
                 </div>
                 <a v-else-if="msg.call.recordingUrl" :href="msg.call.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to recording
@@ -137,8 +159,15 @@
                     <span>{{ msg.voicemail.location }}</span>
                   </div>
                 </div>
-                <div v-if="msg.hasRecording" class="call-card-audio">
-                  <audio controls preload="none" :src="recordingUrl(msg)" class="call-card-player" />
+                <div v-if="msg.hasRecording" class="call-audio-player call-audio-player--voicemail">
+                  <button class="call-audio-play-btn call-audio-play-btn--voicemail" @click="toggleAudioPlayback(msg)">
+                    <Pause v-if="audioIsPlaying(msg)" :size="14" />
+                    <Play v-else :size="14" />
+                  </button>
+                  <div class="call-audio-track call-audio-track--voicemail" @click="seekAudio($event)">
+                    <div class="call-audio-progress call-audio-progress--voicemail" :style="{ width: `${audioProgressFor(msg) * 100}%` }" />
+                  </div>
+                  <span class="call-audio-time">{{ audioTimeDisplay(msg) }} / {{ audioDurationDisplay(msg) }}</span>
                 </div>
                 <a v-else-if="msg.voicemail.recordingUrl" :href="msg.voicemail.recordingUrl" target="_blank" class="call-card-recording">
                   <Play :size="12" /> Listen to voicemail
@@ -153,13 +182,54 @@
                 </div>
               </div>
 
+              <!-- Web chat conversation -->
+              <div v-else-if="msg.messageType === 'web_chat'" class="msg-body msg-body--webchat">
+                <div class="webchat-thread">
+                  <div
+                    v-for="(line, i) in parseWebChatLines(msg.text)"
+                    :key="i"
+                    class="webchat-line"
+                    :class="line.role === 'customer' ? 'webchat-line--user' : 'webchat-line--bot'"
+                  >
+                    <div class="webchat-avatar" :class="`webchat-avatar--${line.role}`">
+                      <Bot v-if="line.role === 'bot'" :size="11" />
+                      <User v-else :size="11" />
+                    </div>
+                    <div class="webchat-bubble" :class="line.role === 'customer' ? 'webchat-bubble--user' : 'webchat-bubble--bot'">
+                      <div class="webchat-meta">
+                        <span class="webchat-speaker">{{ line.role === 'customer' ? 'Customer' : line.speaker }}</span>
+                        <span class="webchat-time">{{ line.time }}</span>
+                      </div>
+                      <div class="webchat-text">{{ line.text }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               <!-- Merge notice -->
               <div v-else-if="msg.messageType === 'merge_notice'" class="msg-body msg-body--merge">
                 {{ msg.text }}
               </div>
 
-              <!-- Regular message body -->
-              <div v-else class="msg-body" :class="{ 'msg-body--note': msg.commChannel === 'internal_note' }">{{ msg.text }}</div>
+              <!-- Rich HTML body (emails, internal notes — preserves tables, lists, formatting) -->
+              <div v-else-if="msg.htmlBody" class="msg-body" :class="{ 'msg-body--email': isEmailMessage(msg), 'msg-body--note': msg.commChannel === 'internal_note' }">
+                <div class="email-content email-content--html" v-html="msg.htmlBody" />
+              </div>
+
+              <!-- Email message body (plain text) -->
+              <div v-else-if="isEmailMessage(msg)" class="msg-body msg-body--email">
+                <div class="email-content">{{ splitEmailBody(msg.text).main }}</div>
+                <div v-if="splitEmailBody(msg.text).quoted" class="email-quoted">
+                  <button class="email-quoted-toggle" @click="toggleQuoted(msg.id)">
+                    <ChevronDown :size="12" :class="{ 'chevron-flipped': expandedQuotedId === msg.id }" />
+                    <span>{{ expandedQuotedId === msg.id ? 'Hide' : 'Show' }} quoted text</span>
+                  </button>
+                  <div v-if="expandedQuotedId === msg.id" class="email-quoted-text">{{ splitEmailBody(msg.text).quoted }}</div>
+                </div>
+              </div>
+
+              <!-- Regular message body (auto-link URLs) -->
+              <div v-else class="msg-body" :class="{ 'msg-body--note': msg.commChannel === 'internal_note' }" v-html="autoLinkUrls(msg.text)" />
             </div>
             <div v-else class="recording-card">
               <div class="recording-header">
@@ -210,7 +280,7 @@
                 </div>
               </div>
             </div>
-            <div v-if="msg.from === 'agent'" class="msg-avatar msg-avatar--agent">Y</div>
+            <div v-if="msg.from === 'agent'" class="msg-avatar msg-avatar--agent" :style="{ background: agentAvatarColor(msg) }">{{ agentInitial(msg) }}</div>
           </div>
         </TransitionGroup>
       </div>
@@ -709,13 +779,13 @@
 </template>
 
 <script setup lang="ts">
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
+import { AlertTriangle, Bot, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarSign, ExternalLink, Globe, History, Lock, Mail, MessageCircle, MessageSquare, Mic, MicOff, Pause, Phone, PhoneCall, PhoneOff, Play, RotateCcw, Send, Sparkles, Truck, User, Users, X, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
 import { API_KEY_STORAGE_KEY } from "../utils/api"
 import type { Message } from "../stores/useTicketStore"
-import { useTicketStore } from "../stores/useTicketStore"
+import { avatarColor, useTicketStore } from "../stores/useTicketStore"
 import ComingSoon from "./ComingSoon.vue"
 
 const props = defineProps<{
@@ -729,7 +799,7 @@ const emit = defineEmits<{
 }>()
 
 const ticketStore = useTicketStore()
-const { tickets } = storeToRefs(ticketStore)
+const { tickets, zendeskSubdomain } = storeToRefs(ticketStore)
 const { addTag, loadComments, removeTag, resolveTicket, sendReply: sharedSendReply, setAssignee, setStatus, setTemperature, updateNotes } = ticketStore
 
 const aiStore = useAiStore()
@@ -772,11 +842,19 @@ const confirmAction = ref<ConfirmAction | null>(null)
 const sessionStartTime = ref<number | null>(null)
 let callIdCounter = 0
 
-// Recording playback state
+// Recording playback state (demo waveform player)
 const playingRecordingId = ref<number | null>(null)
 const playbackProgress = ref(0)
 const playbackTimerHandle = ref<ReturnType<typeof setInterval> | null>(null)
 const expandedTranscriptId = ref<number | null>(null)
+const expandedQuotedId = ref<number | null>(null)
+
+// Real audio playback state (call/voicemail recordings from Zendesk)
+const audioEl = ref<HTMLAudioElement | null>(null)
+const audioPlayingMsgId = ref<number | null>(null)
+const audioCurrentTime = ref(0)
+const audioDuration = ref(0)
+const audioLoading = ref(false)
 
 const channelOptions = [
   { id: "chat", icon: MessageCircle, label: "Chat" },
@@ -794,12 +872,19 @@ const tabs = [
   { id: "settings", icon: Cog, label: "Settings" },
 ]
 
-const statusOptions = ["new", "open", "in_progress", "escalated", "resolved", "closed"]
+const statusOptions = ["new", "open", "pending", "escalated", "solved", "closed"]
 const tempOptions = ["hot", "warm", "cool"]
 const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
 const ticket = computed(() => tickets.value.find((t) => t.id === props.ticketId))
 const currentAi = computed(() => aiSuggestions.value[props.ticketId] ?? null)
+
+const zendeskUrl = computed(() => {
+  const sub = zendeskSubdomain.value
+  const zdId = ticket.value?.zendeskTicketId
+  if (!sub || !zdId) return null
+  return `https://${sub}.zendesk.com/agent/tickets/${zdId}`
+})
 
 function recordingUrl(msg: Message): string {
   const base = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
@@ -815,19 +900,23 @@ function commChannelCategory(msg: Message): string {
   if (cc === "sms_inbound") return "sms"
   if (cc === "internal_note") return "internal"
   if (cc === "web_chat") return "chat"
+  if (cc === "web_form") return "web"
+  if (cc === "public_reply") return "reply"
   if (cc === "ticket_merge") return "web"
   return msg.channel
 }
 
 const COMM_CHANNEL_LABELS: Record<string, string> = {
-  email_inbound: "email",
-  email_outbound: "email",
+  email_inbound: "received",
+  email_outbound: "sent",
   sms_inbound: "sms",
   call_outbound: "call",
   call_inbound: "call",
   call_summary: "call",
   voicemail: "voicemail",
   web_chat: "chat",
+  web_form: "web",
+  public_reply: "reply",
   internal_note: "internal",
   ticket_merge: "system",
 }
@@ -835,6 +924,92 @@ const COMM_CHANNEL_LABELS: Record<string, string> = {
 function commChannelLabel(msg: Message): string {
   if (msg.commChannel) return COMM_CHANNEL_LABELS[msg.commChannel] ?? msg.channel
   return msg.channel === "voice" ? "phone" : msg.channel
+}
+
+// Email body helpers
+function isEmailMessage(msg: Message): boolean {
+  if (msg.automated) return true
+  const cc = msg.commChannel
+  return cc === "email_inbound" || cc === "email_outbound" || cc === "public_reply" || cc === "web_form"
+}
+
+function splitEmailBody(text: string): { main: string, quoted: string | null } {
+  // "On ... wrote:" reply header
+  const wroteMatch = text.match(/\n\s*On .+wrote:\s*\n/)
+  if (wroteMatch?.index !== undefined) {
+    return { main: text.slice(0, wroteMatch.index).trim(), quoted: text.slice(wroteMatch.index).trim() }
+  }
+  // "--- Original Message ---" separator
+  const separatorMatch = text.match(/\n\s*-{3,}\s*(Original Message|Forwarded message)/i)
+  if (separatorMatch?.index !== undefined) {
+    return { main: text.slice(0, separatorMatch.index).trim(), quoted: text.slice(separatorMatch.index).trim() }
+  }
+  // Block of `>` quoted lines at the end
+  const lines = text.split("\n")
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim().startsWith(">") && lines.slice(i).every((l) => l.trim().startsWith(">") || l.trim() === "")) {
+      return { main: lines.slice(0, i).join("\n").trim(), quoted: lines.slice(i).join("\n").trim() }
+    }
+  }
+  return { main: text, quoted: null }
+}
+
+function toggleQuoted(msgId: number) {
+  expandedQuotedId.value = expandedQuotedId.value === msgId ? null : msgId
+}
+
+function agentInitial(msg: Message): string {
+  const name = msg.authorName || "?"
+  return name[0].toUpperCase()
+}
+
+function agentAvatarColor(msg: Message): string {
+  return avatarColor(msg.authorName || "Agent")
+}
+
+// Auto-link URLs in plain text (escapes HTML first to prevent injection)
+function autoLinkUrls(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+  return escaped.replace(
+    /https?:\/\/[^\s<>"')\]]+/g,
+    (url) => `<a href="${url}" target="_blank" rel="noopener" class="auto-link">${url}</a>`
+  )
+}
+
+// Web chat body parser — splits "(HH:MM:SS) Speaker: text" lines into structured entries
+type ChatRole = "customer" | "bot" | "agent"
+
+interface ChatLine {
+  speaker: string
+  role: ChatRole
+  time: string
+  text: string
+}
+
+function chatSpeakerRole(speaker: string): ChatRole {
+  if (/bot\b/i.test(speaker) || speaker.toLowerCase() === "system") return "bot"
+  if (/^web user\b/i.test(speaker)) return "customer"
+  return "agent"
+}
+
+function parseWebChatLines(body: string): ChatLine[] {
+  const lines: ChatLine[] = []
+  // Split on timestamp markers: (HH:MM:SS)
+  const parts = body.split(/(?=\(\d{1,2}:\d{2}:\d{2}\)\s)/)
+  for (const part of parts) {
+    const m = part.match(/^\((\d{1,2}:\d{2}:\d{2})\)\s+(.+?):\s*([\s\S]*)$/)
+    if (!m) continue
+    const time = m[1]
+    const speaker = m[2].trim()
+    const text = m[3].trim()
+    if (!text) continue
+    lines.push({ speaker, role: chatSpeakerRole(speaker), time, text })
+  }
+  return lines
 }
 
 // Load comments whenever the displayed ticket changes
@@ -1182,6 +1357,82 @@ function stopPlayback() {
   playbackProgress.value = 0
 }
 
+// Real audio playback (call/voicemail recordings)
+function toggleAudioPlayback(msg: Message) {
+  if (audioPlayingMsgId.value === msg.id) {
+    if (audioEl.value?.paused) {
+      audioEl.value.play()
+    } else {
+      audioEl.value?.pause()
+    }
+    return
+  }
+  stopAudioPlayback()
+  audioLoading.value = true
+  audioPlayingMsgId.value = msg.id
+  const audio = new Audio(recordingUrl(msg))
+  audioEl.value = audio
+  audio.addEventListener("loadedmetadata", () => {
+    audioDuration.value = audio.duration
+    audioLoading.value = false
+  })
+  audio.addEventListener("timeupdate", () => {
+    audioCurrentTime.value = audio.currentTime
+  })
+  audio.addEventListener("ended", () => {
+    stopAudioPlayback()
+  })
+  audio.addEventListener("error", () => {
+    audioLoading.value = false
+    stopAudioPlayback()
+  })
+  audio.play()
+}
+
+function stopAudioPlayback() {
+  if (audioEl.value) {
+    audioEl.value.pause()
+    audioEl.value.src = ""
+    audioEl.value = null
+  }
+  audioPlayingMsgId.value = null
+  audioCurrentTime.value = 0
+  audioDuration.value = 0
+  audioLoading.value = false
+}
+
+function seekAudio(event: MouseEvent) {
+  if (!audioEl.value || !audioDuration.value) return
+  const bar = event.currentTarget as HTMLElement
+  const rect = bar.getBoundingClientRect()
+  const pct = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width))
+  audioEl.value.currentTime = pct * audioDuration.value
+}
+
+function audioProgressFor(msg: Message): number {
+  if (audioPlayingMsgId.value !== msg.id || !audioDuration.value) return 0
+  return audioCurrentTime.value / audioDuration.value
+}
+
+function audioIsPlaying(msg: Message): boolean {
+  return audioPlayingMsgId.value === msg.id && !!audioEl.value && !audioEl.value.paused
+}
+
+function audioTimeDisplay(msg: Message): string {
+  if (audioPlayingMsgId.value !== msg.id) return "0:00"
+  return formatDuration(Math.floor(audioCurrentTime.value))
+}
+
+function audioDurationDisplay(msg: Message): string {
+  if (audioPlayingMsgId.value === msg.id && audioDuration.value) {
+    return formatDuration(Math.floor(audioDuration.value))
+  }
+  // Fall back to call/voicemail metadata duration if available
+  const raw = msg.call?.duration ?? msg.voicemail?.duration
+  if (raw) return raw
+  return "--:--"
+}
+
 function toggleTranscript(msgId: number) {
   expandedTranscriptId.value = expandedTranscriptId.value === msgId ? null : msgId
 }
@@ -1247,6 +1498,7 @@ onBeforeUnmount(() => {
     clearRingTimer(c)
   })
   stopPlayback()
+  stopAudioPlayback()
 })
 </script>
 
@@ -1477,6 +1729,23 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.zendesk-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 24px;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.45);
+  text-decoration: none;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.zendesk-link:hover {
+  color: #94a3b8;
+}
+
 .tab-btn {
   display: flex;
   align-items: center;
@@ -1522,6 +1791,7 @@ onBeforeUnmount(() => {
 .msg-channel--phone,
 .msg-channel--voice { background: rgba(245, 158, 11, 0.1); color: #fcd34d; }
 .msg-channel--web { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+.msg-channel--reply { background: rgba(52, 211, 153, 0.1); color: #6ee7b7; }
 .msg-channel--internal { background: rgba(251, 191, 36, 0.1); color: #fbbf24; }
 
 /* ── Tab panels (shared) ───────────────────────────────── */
@@ -1974,7 +2244,7 @@ onBeforeUnmount(() => {
 }
 
 .msg-avatar--agent {
-  background: linear-gradient(135deg, #6366f1, #ec4899);
+  /* background set dynamically via :style binding */
 }
 
 .msg-bubble {
@@ -2017,6 +2287,16 @@ onBeforeUnmount(() => {
   color: #94a3b8;
 }
 
+.msg-automated {
+  font-size: 10px;
+  font-weight: 600;
+  color: #a78bfa;
+  background: rgba(167, 139, 250, 0.15);
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.03em;
+}
+
 .msg-time {
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
@@ -2026,6 +2306,167 @@ onBeforeUnmount(() => {
   font-size: 16px;
   color: #e2e8f0;
   line-height: 1.6;
+}
+
+/* ── Email body ─────────────────────────────────────────── */
+
+.msg-body--email {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.email-content {
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.email-content--html {
+  overflow-x: auto;
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+
+/* Tables rendered from rich HTML email bodies */
+.email-content--html :deep(table) {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+
+.email-content--html :deep(th),
+.email-content--html :deep(td) {
+  padding: 5px 10px;
+  text-align: left !important;
+  vertical-align: top !important;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Collapse empty cells (email layout artifacts) */
+.email-content--html :deep(td:empty),
+.email-content--html :deep(th:empty) {
+  padding: 0;
+  width: 0;
+  max-width: 0;
+  overflow: hidden;
+  border: none;
+}
+
+.email-content--html :deep(th) {
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #64748b;
+  padding-bottom: 6px;
+}
+
+.email-content--html :deep(td) {
+  color: #cbd5e1;
+}
+
+.email-content--html :deep(td:first-child) {
+  color: #94a3b8;
+  font-weight: 500;
+  white-space: nowrap;
+  padding-right: 16px;
+}
+
+.email-content--html :deep(tr:last-child td) {
+  border-bottom: none;
+}
+
+.email-content--html :deep(tr:hover td:not(:empty)) {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+/* Strip margins from all elements inside cells so rows align to the top */
+.email-content--html :deep(td > *),
+.email-content--html :deep(th > *) {
+  margin: 0 !important;
+  padding: 0 !important;
+  vertical-align: top !important;
+}
+
+/* Lists in rich email bodies */
+.email-content--html :deep(ul),
+.email-content--html :deep(ol) {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+
+.email-content--html :deep(li) {
+  margin: 4px 0;
+  color: #cbd5e1;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.email-content--html :deep(blockquote) {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 2px solid rgba(99, 102, 241, 0.25);
+  color: rgba(148, 163, 184, 0.7);
+  font-size: 13px;
+}
+
+.email-content--html :deep(p) {
+  margin: 6px 0;
+}
+
+.email-content--html :deep(strong),
+.email-content--html :deep(b) {
+  font-weight: 600;
+  color: #e2e8f0;
+}
+
+.email-content--html :deep(a) {
+  color: #818cf8;
+  text-decoration: none;
+}
+
+.email-content--html :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.email-quoted {
+  margin-top: 12px;
+}
+
+.email-quoted-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #818cf8;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.email-quoted-toggle:hover {
+  background: rgba(99, 102, 241, 0.15);
+}
+
+.email-quoted-toggle svg {
+  transition: transform 0.2s;
+}
+
+.email-quoted-text {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-left: 2px solid rgba(99, 102, 241, 0.25);
+  border-radius: 0 6px 6px 0;
+  background: rgba(0, 0, 0, 0.15);
+  color: rgba(148, 163, 184, 0.7);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ── Channel bar ────────────────────────────────────────── */
@@ -2861,14 +3302,87 @@ onBeforeUnmount(() => {
   background: rgba(99, 102, 241, 0.18);
 }
 
-.call-card-audio {
-  margin-top: 8px;
+/* ── Custom audio player for call recordings ───────────── */
+
+.call-audio-player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.08);
 }
 
-.call-card-player {
-  width: 100%;
-  height: 32px;
-  border-radius: 6px;
+.call-audio-player--voicemail {
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.call-audio-play-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(99, 102, 241, 0.2);
+  color: #a5b4fc;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.call-audio-play-btn:hover {
+  background: rgba(99, 102, 241, 0.35);
+  transform: scale(1.05);
+}
+
+.call-audio-play-btn:active {
+  transform: scale(0.95);
+}
+
+.call-audio-play-btn--voicemail {
+  background: rgba(168, 85, 247, 0.2);
+  color: #d8b4fe;
+}
+
+.call-audio-play-btn--voicemail:hover {
+  background: rgba(168, 85, 247, 0.35);
+}
+
+.call-audio-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.15);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+.call-audio-track--voicemail {
+  background: rgba(168, 85, 247, 0.15);
+}
+
+.call-audio-progress {
+  height: 100%;
+  border-radius: 3px;
+  background: #818cf8;
+  transition: width 0.1s linear;
+}
+
+.call-audio-progress--voicemail {
+  background: #c084fc;
+}
+
+.call-audio-time {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: rgba(148, 163, 184, 0.5);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .call-card-transcript {
@@ -2880,6 +3394,102 @@ onBeforeUnmount(() => {
   font-size: 12px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+/* ── Web chat conversation ──────────────────────────────── */
+
+.msg-body--webchat {
+  padding: 0 !important;
+}
+
+.webchat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 4px;
+}
+
+.webchat-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 85%;
+}
+
+.webchat-line--bot {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.webchat-line--user {
+  align-self: flex-start;
+}
+
+.webchat-avatar {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+.webchat-avatar--bot {
+  background: rgba(99, 102, 241, 0.25);
+  color: #818cf8;
+}
+
+.webchat-avatar--agent {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+}
+
+.webchat-avatar--customer {
+  background: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+}
+
+.webchat-bubble {
+  border-radius: 12px;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.webchat-bubble--bot {
+  background: rgba(255, 255, 255, 0.06);
+  border-top-right-radius: 4px;
+}
+
+.webchat-bubble--user {
+  background: rgba(52, 211, 153, 0.1);
+  border-top-left-radius: 4px;
+}
+
+.webchat-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 1px;
+}
+
+.webchat-speaker {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.webchat-time {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.webchat-text {
+  color: rgba(255, 255, 255, 0.82);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ── Merge / system notices ─────────────────────────────── */
@@ -2898,5 +3508,16 @@ onBeforeUnmount(() => {
 .msg-body--note {
   border-left: 2px solid rgba(245, 158, 11, 0.4);
   padding-left: 10px;
+}
+
+/* Auto-linked URLs in plain text messages */
+.msg-body :deep(.auto-link) {
+  color: #818cf8;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.msg-body :deep(.auto-link:hover) {
+  text-decoration: underline;
 }
 </style>

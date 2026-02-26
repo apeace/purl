@@ -1,9 +1,9 @@
 import type { AppTicketCommentRow, AppTicketRow } from "@purl/lib"
-import { getTickets, getTicketsByTicketIdComments } from "@purl/lib"
+import { getOrg, getTickets, getTicketsByTicketIdComments } from "@purl/lib"
 import { defineStore } from "pinia"
 import { computed, reactive, ref } from "vue"
 import type { CallData, CommChannel, MergeData, MessageType, VoicemailData } from "../utils/parseComment"
-import { parseComment, stripHtml } from "../utils/parseComment"
+import { parseComment, sanitizeHtml, stripHtml } from "../utils/parseComment"
 
 // ── Types ───────────────────────────────────────────────
 
@@ -13,7 +13,9 @@ export interface Message {
   channel: string
   time: string
   text: string
+  htmlBody?: string
   authorName?: string
+  automated?: boolean
   messageType?: MessageType
   commChannel?: CommChannel
   call?: CallData
@@ -35,6 +37,7 @@ export interface Ticket {
   name: string
   company: string
   ticketId: string
+  zendeskTicketId?: number
   subject: string
   description: string
   createdAt: string
@@ -113,6 +116,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     name: reporterName,
     company: "",
     ticketId: zendeskId ? `#${zendeskId}` : `#${id.slice(0, 6).toUpperCase()}`,
+    zendeskTicketId: zendeskId ?? undefined,
     subject: t.title ?? "",
     description: stripHtml(t.description ?? ""),
     createdAt,
@@ -144,6 +148,7 @@ export const useTicketStore = defineStore("tickets", () => {
   // ── State ─────────────────────────────────────────────
 
   const tickets = ref<Ticket[]>([])
+  const zendeskSubdomain = ref("")
 
   // TODO: derive resolvedToday from real ticket data instead of hardcoding a starting value
   const resolvedToday = ref(8)
@@ -320,9 +325,14 @@ export const useTicketStore = defineStore("tickets", () => {
 
   function loadTickets() {
     if (!loadPromise) {
-      loadPromise = getTickets().then(({ data }) => {
-        if (data) tickets.value = data.map(toTicket)
-      })
+      loadPromise = Promise.all([
+        getTickets().then(({ data }) => {
+          if (data) tickets.value = data.map(toTicket)
+        }),
+        getOrg().then(({ data }) => {
+          if (data?.zendesk_subdomain) zendeskSubdomain.value = data.zendesk_subdomain
+        }),
+      ]).then(() => {})
     }
     return loadPromise
   }
@@ -338,6 +348,7 @@ export const useTicketStore = defineStore("tickets", () => {
   // Extended type until the OpenAPI client regenerates with new fields
   type CommentRowExt = AppTicketCommentRow & {
     author_name?: string
+    html_body?: string
     call_id?: number
     has_recording?: boolean
     transcription_text?: string
@@ -357,13 +368,37 @@ export const useTicketStore = defineStore("tickets", () => {
     const role = c.role ?? "customer"
     const parsed = parseComment(body, channel, role)
 
+    // Use the full HTML body from Zendesk when available (preserves tables, lists, etc.)
+    const rawHtml = c.html_body
+    const htmlBody = rawHtml ? sanitizeHtml(rawHtml) : undefined
+
+    // When Zendesk Automation wraps an agent reply, the body starts with
+    // "(HH:MM:SS) Agent Name: ..." — extract the real sender and clean body
+    let displayAuthor = c.author_name || undefined
+    let displayText = parsed.cleanBody
+    let displayHtml = htmlBody
+    let automated = false
+    const authorName = c.author_name ?? ""
+    if (/automation|system/i.test(authorName) && parsed.messageType !== "web_chat") {
+      const wrapped = parsed.cleanBody.match(/^\(\d{1,2}:\d{2}:\d{2}\)\s+(.+?):\s*([\s\S]*)$/)
+      if (wrapped) {
+        displayAuthor = wrapped[1].trim()
+        displayText = wrapped[2].trim()
+        // Clear htmlBody so the cleaned text is used instead
+        displayHtml = undefined
+        automated = true
+      }
+    }
+
     const msg: Message = {
       id: index,
       from: role === "agent" ? "agent" : "customer",
       channel,
       time: formatWait(c.created_at ?? ""),
-      text: parsed.cleanBody,
-      authorName: c.author_name || undefined,
+      text: displayText,
+      htmlBody: displayHtml,
+      authorName: displayAuthor,
+      automated,
       messageType: parsed.messageType,
       commChannel: parsed.commChannel,
       call: parsed.call,
@@ -371,11 +406,16 @@ export const useTicketStore = defineStore("tickets", () => {
       merge: parsed.merge,
     }
 
+    // Attach transcript text — may come from DB (call_id) or from a paired
+    // Zendesk Automation comment (transcription_text set by pairTranscriptComments)
+    if (c.transcription_text) {
+      msg.transcript = c.transcription_text
+    }
+
     // Prefer structured voice data from DB when available
     if (c.call_id) {
       msg.commentId = c.id ?? undefined
       msg.hasRecording = c.has_recording ?? false
-      msg.transcript = c.transcription_text || undefined
 
       // Overlay structured fields onto regex-parsed call/voicemail data
       if (msg.call) {
@@ -412,7 +452,144 @@ export const useTicketStore = defineStore("tickets", () => {
     const ticket = tickets.value.find((t) => t.id === ticketId)
     if (!ticket) return
 
-    ticket.messages = data.map((c, i) => commentToMessage(c, i + 1))
+    // Deduplicate comments that share the same call_id, then match "Call to/from"
+    // summaries with their detailed "Inbound/Outbound call" counterparts by phone
+    // number, then pair Zendesk Automation transcript comments with the adjacent
+    // call/voicemail so everything renders in a single card.
+    const deduped = deduplicateByCallId(data)
+    const merged = deduplicateCallSummaries(deduped)
+    const paired = pairTranscriptComments(merged)
+    ticket.messages = paired.map((c, i) => commentToMessage(c, i + 1))
+  }
+
+  function isCallOrVoicemail(body: string): boolean {
+    return /^(Inbound|Outbound) call/.test(body)
+      || /^Voicemail from/.test(body)
+      || /^Call (to|from):/.test(body)
+  }
+
+  /** Extract clean transcript text from a Zendesk Automation transcript body. */
+  function extractTranscriptText(body: string): string {
+    const clean = stripHtml(body)
+    // Remove markdown heading + "Call transcript:" prefix
+    let text = clean.replace(/^#+\s*\*{0,2}\s*Call transcript:?\s*\*{0,2}\s*/i, "")
+    // Strip markdown bold markers
+    text = text.replace(/\*\*/g, "")
+    // Remove Zendesk disclaimer after *** separator
+    text = text.replace(/\*\s*\*\s*\*[\s\S]*$/, "").trim()
+    // Insert line breaks before each timestamp (e.g. "00:20 Customer ...")
+    text = text.replace(/\s+(\d{2}:\d{2}\s)/g, "\n$1")
+    return text.trim()
+  }
+
+  /**
+   * Zendesk posts call transcripts as separate internal-note comments from
+   * "Zendesk Automation". Detect these and attach their text to the nearest
+   * preceding call/voicemail comment, then remove the standalone transcript.
+   */
+  function pairTranscriptComments(comments: AppTicketCommentRow[]): AppTicketCommentRow[] {
+    const absorbed = new Set<number>()
+
+    for (let i = 0; i < comments.length; i++) {
+      const ext = comments[i] as CommentRowExt
+      const body = stripHtml(ext.body ?? "")
+      if (!/call transcript/i.test(body)) continue
+
+      // Walk backwards to find the nearest call/voicemail
+      for (let j = i - 1; j >= 0; j--) {
+        if (absorbed.has(j)) continue
+        const prev = comments[j] as CommentRowExt
+        const prevBody = stripHtml(prev.body ?? "")
+        if (isCallOrVoicemail(prevBody) || prev.call_id) {
+          if (!prev.transcription_text) {
+            prev.transcription_text = extractTranscriptText(ext.body ?? "")
+          }
+          absorbed.add(i)
+          break
+        }
+      }
+    }
+
+    return comments.filter((_, i) => !absorbed.has(i))
+  }
+
+  function deduplicateByCallId(comments: AppTicketCommentRow[]): AppTicketCommentRow[] {
+    const seen = new Map<number, number>() // call_id → index in result
+    const result: AppTicketCommentRow[] = []
+
+    for (const c of comments) {
+      const ext = c as CommentRowExt
+      if (!ext.call_id) {
+        result.push(c)
+        continue
+      }
+
+      const existing = seen.get(ext.call_id)
+      if (existing === undefined) {
+        seen.set(ext.call_id, result.length)
+        result.push(c)
+      } else {
+        // Keep whichever comment is richer (has recording, or is a full
+        // inbound/outbound call rather than a summary)
+        const prev = result[existing] as CommentRowExt
+        const prevIsDetailed = /^(Inbound|Outbound) call/.test(prev.body ?? "")
+        const curIsDetailed = /^(Inbound|Outbound) call/.test(ext.body ?? "")
+
+        if (!prevIsDetailed && curIsDetailed) {
+          // Current is richer — replace, carrying over recording/transcript if missing
+          if (!ext.has_recording && prev.has_recording) ext.has_recording = prev.has_recording
+          if (!ext.transcription_text && prev.transcription_text) ext.transcription_text = prev.transcription_text
+          result[existing] = c
+        } else {
+          // Previous is richer — carry over any data the prev lacks
+          if (!prev.has_recording && ext.has_recording) prev.has_recording = ext.has_recording
+          if (!prev.transcription_text && ext.transcription_text) prev.transcription_text = ext.transcription_text
+        }
+      }
+    }
+
+    return result
+  }
+
+  /** Extract digit-only phone numbers from text for fuzzy matching. */
+  function extractPhoneDigits(text: string): string[] {
+    return [...text.matchAll(/\+?[\d()\s-]{7,}/g)]
+      .map((m) => m[0].replace(/\D/g, ""))
+      .filter((d) => d.length >= 7)
+  }
+
+  /**
+   * Zendesk sometimes creates a short "Call to/from:" summary AND a detailed
+   * "Inbound/Outbound call" comment for the same call without sharing a call_id.
+   * Match them by phone number and absorb the summary into the detailed version.
+   */
+  function deduplicateCallSummaries(comments: AppTicketCommentRow[]): AppTicketCommentRow[] {
+    const absorbed = new Set<number>()
+
+    for (let i = 0; i < comments.length; i++) {
+      if (absorbed.has(i)) continue
+      const body = stripHtml((comments[i] as CommentRowExt).body ?? "")
+      // Only target the shorter "Call to/from:" summaries
+      if (!/^Call (to|from):/.test(body)) continue
+
+      const phones = extractPhoneDigits(body)
+      if (!phones.length) continue
+
+      // Search nearby comments (within 5 positions) for a detailed match
+      for (let j = Math.max(0, i - 5); j < Math.min(comments.length, i + 6); j++) {
+        if (j === i || absorbed.has(j)) continue
+        const otherBody = stripHtml((comments[j] as CommentRowExt).body ?? "")
+        if (!/^(Inbound|Outbound) call/.test(otherBody)) continue
+
+        const otherPhones = extractPhoneDigits(otherBody)
+        if (phones.some((p) => otherPhones.includes(p))) {
+          absorbed.add(i)
+          break
+        }
+      }
+    }
+
+    return comments.filter((_, i) => !absorbed.has(i))
   }
 
   // Auto-load on first store access
@@ -445,6 +622,7 @@ export const useTicketStore = defineStore("tickets", () => {
     setTemperature,
     sortBy,
     sortedTickets,
+    zendeskSubdomain,
     tickets,
     toggleStar,
     uniqueAssignees,

@@ -74,6 +74,7 @@ type webhookCommentDetail struct {
 	AuthorID  flexInt64         `json:"author_id"`
 	Type      string            `json:"type"`
 	Body      string            `json:"body"`
+    HtmlBody  string             `json:"html_body"`
 	Public    bool              `json:"public"`
 	Via       webhookCommentVia `json:"via"`
 	CreatedAt time.Time         `json:"created_at"`
@@ -508,14 +509,14 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO ticket_comments
-			(ticket_id, customer_author_id, agent_author_id, role, body, channel, zendesk_comment_id, created_at, updated_at,
+			(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
 			 call_id, recording_url, transcription_text, transcription_status, call_duration,
 			 call_from, call_to, answered_by_name, call_location, call_started_at)
-		VALUES ($1, $2, $3, $4::comment_role, $5, $6::comment_channel, $7, $8, $8,
-		        $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
+		        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		ON CONFLICT (ticket_id, zendesk_comment_id) DO NOTHING`,
 		ticketID, customerAuthorID, agentAuthorID, role,
-		d.Body, mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
+		d.Body, nilIfEmpty(d.HtmlBody), mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
 		callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
 		callFrom, callTo, answeredByName, callLocation, callStartedAt,
 	)

@@ -1,9 +1,9 @@
 export const STATUS_COLORS: Record<string, string> = {
   new: "#38bdf8",
   open: "#60a5fa",
-  in_progress: "#a855f7",
+  pending: "#a855f7",
   escalated: "#f97316",
-  resolved: "#34d399",
+  solved: "#34d399",
   closed: "#94a3b8",
 }
 
@@ -20,9 +20,9 @@ export const STATUS_PILL: Record<string, { bg: string; text: string }> = Object.
 export const STATUS_LIST = [
   { value: "new", label: "New", color: STATUS_COLORS.new },
   { value: "open", label: "Open", color: STATUS_COLORS.open },
-  { value: "in_progress", label: "In Progress", color: STATUS_COLORS.in_progress },
+  { value: "pending", label: "Pending", color: STATUS_COLORS.pending },
   { value: "escalated", label: "Escalated", color: STATUS_COLORS.escalated },
-  { value: "resolved", label: "Resolved", color: STATUS_COLORS.resolved },
+  { value: "solved", label: "Solved", color: STATUS_COLORS.solved },
   { value: "closed", label: "Closed", color: STATUS_COLORS.closed },
 ]
 
