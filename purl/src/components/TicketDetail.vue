@@ -289,7 +289,7 @@
             class="option-btn"
             :class="{ 'option-btn--active': ticket.status === s }"
             @click="setStatus(ticketId, s)"
-          >{{ s }}</button>
+          >{{ s.replace(/_/g, " ") }}</button>
         </div>
       </div>
     </div>
@@ -599,7 +599,8 @@
         </div>
       </div>
 
-      <div v-if="currentAi" class="ai-panel">
+      <div v-if="currentAi" class="ai-panel ai-panel--overlay">
+        <ComingSoon />
         <div class="ai-panel-header">
           <div class="ai-badge">
             <Sparkles :size="11" /> AI
@@ -622,6 +623,7 @@ import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
 import { useTicketStore } from "../stores/useTicketStore"
 import type { Message } from "../stores/useTicketStore"
+import ComingSoon from "./ComingSoon.vue"
 
 const props = defineProps<{
   ticketId: string
@@ -699,7 +701,7 @@ const tabs = [
   { id: "settings", icon: Cog, label: "Settings" },
 ]
 
-const statusOptions = ["new", "open", "pending", "escalated", "solved", "closed"]
+const statusOptions = ["new", "open", "in_progress", "escalated", "resolved", "closed"]
 const tempOptions = ["hot", "warm", "cool"]
 const assigneeOptions = ["Alex Chen", "Sarah Kim", "Jordan Lee", "Unassigned"]
 
@@ -1174,6 +1176,11 @@ onBeforeUnmount(() => {
 .ai-panel {
   padding: 16px 24px;
   background: rgba(168, 85, 247, 0.04);
+}
+
+.ai-panel--overlay {
+  position: relative;
+  overflow: hidden;
 }
 
 .ai-panel-header {

@@ -1,5 +1,6 @@
 <template>
   <div class="health-wrap">
+    <ComingSoon />
     <div class="health-top">
       <span class="health-title">Shift Health</span>
       <span class="health-trend" :class="trendUp ? 'health-trend--up' : 'health-trend--down'">
@@ -45,6 +46,7 @@ import { ChevronDown, TrendingDown, TrendingUp } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useTicketStore } from "../stores/useTicketStore"
+import ComingSoon from "./ComingSoon.vue"
 
 const { hudOpen, hudResolvedToday } = storeToRefs(useTicketStore())
 
@@ -116,6 +118,8 @@ const healthComponents = computed(() => [
   padding: 14px 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .health-top {

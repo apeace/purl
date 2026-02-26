@@ -1,5 +1,6 @@
 <template>
-  <div>
+  <div class="dashboard">
+    <ComingSoon page />
     <div class="page-header">
       <h1 class="page-title">Good {{ greeting }}, Alex</h1>
       <p class="page-subtitle">Here's your support queue overview.</p>
@@ -25,6 +26,8 @@
         <ActivityRow name="James Kim" action="Merged duplicate tickets #E1A0, #E1A3" time="2h ago" color="#ec4899" :delay="900" />
       </div>
 
+      <!-- TODO: Restore "Tickets by Priority" panel once priority system is in place -->
+      <!--
       <div class="panel">
         <div class="panel-header">
           <span class="panel-title">Tickets by Status</span>
@@ -54,6 +57,7 @@
           </div>
         </div>
       </div>
+      -->
 
       <div class="panel">
         <div class="panel-header">
@@ -112,6 +116,7 @@
 import { storeToRefs } from "pinia"
 import { computed } from "vue"
 import ActivityRow from "../components/ActivityRow.vue"
+import ComingSoon from "../components/ComingSoon.vue"
 import StatCard from "../components/StatCard.vue"
 import { useTicketStore } from "../stores/useTicketStore"
 import { STATUS_COLORS } from "../utils/colors"
@@ -166,6 +171,11 @@ const slaMetrics = [
 </script>
 
 <style scoped>
+.dashboard {
+  position: relative;
+  min-height: 400px;
+}
+
 .page-header {
   margin-bottom: 24px;
 }

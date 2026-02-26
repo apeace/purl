@@ -21,7 +21,7 @@
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
-                <span class="hud-value">{{ hudResolvedToday }}</span>
+                <span class="hud-value">{{ resolvedToday }}</span>
                 <span class="hud-label">resolved today</span>
               </div>
             </div>
@@ -44,6 +44,7 @@
                 <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
                   <Sparkles :size="10" /> Recommended
                 </div>
+                <ComingSoon v-if="opt.id === 'urgent' || opt.id === 'quick'" />
                 <component :is="opt.icon" :size="36" class="priority-icon" :style="{ color: opt.color }" />
                 <div class="priority-label">{{ opt.label }}</div>
                 <div class="priority-stats">
@@ -105,7 +106,7 @@
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
-            <span class="hud-value">{{ hudResolvedToday }}</span>
+            <span class="hud-value">{{ resolvedToday }}</span>
             <span class="hud-label">resolved today</span>
           </div>
         </div>
@@ -149,6 +150,7 @@
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
+import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useAiStore } from "../stores/useAiStore"
@@ -159,7 +161,6 @@ const ticketStore = useTicketStore()
 const {
   hudLongestWait,
   hudOpen,
-  hudResolvedToday,
   openTickets: threads,
   resolvedToday,
 } = storeToRefs(ticketStore)
@@ -167,8 +168,6 @@ const { resolveTicket } = ticketStore
 
 const aiStore = useAiStore()
 const { suggestions: aiSuggestions } = storeToRefs(aiStore)
-
-const DAILY_GOAL = 20
 
 const priorityOptions = [
   { id: "urgent", label: "Urgent first", description: "Tackle high-priority tickets before they escalate", icon: Flame, color: "#f87171" },
@@ -192,7 +191,7 @@ const cardStats = computed<Record<string, { stat: string; detail: string }>>(() 
     urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
     waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
-    queue: { stat: `${hudOpen.value} open`, detail: `${hudResolvedToday.value}/${DAILY_GOAL} resolved` },
+    queue: { stat: `${hudOpen.value} open`, detail: `${resolvedToday.value} resolved` },
   }
 })
 
@@ -336,6 +335,7 @@ watch(activeId, (val) => {
 
 .priority-card {
   position: relative;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 20px;
