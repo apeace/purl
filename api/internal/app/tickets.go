@@ -10,20 +10,24 @@ import (
 )
 
 type ticketRow struct {
-	ID            string    `json:"id"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	ZendeskStatus *string   `json:"zendesk_status"`
-	ReporterName  string    `json:"reporter_name"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	ZendeskStatus   *string   `json:"zendesk_status"`
+	ZendeskTicketID *int64    `json:"zendesk_ticket_id"`
+	ReporterName    string    `json:"reporter_name"`
+	ReporterEmail   *string   `json:"reporter_email"`
+	AssigneeName    *string   `json:"assignee_name"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type ticketCommentRow struct {
-	ID        string    `json:"id"`
-	Body      string    `json:"body"`
-	Channel   string    `json:"channel"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string    `json:"id"`
+	Body       string    `json:"body"`
+	Channel    string    `json:"channel"`
+	Role       string    `json:"role"`
+	AuthorName string    `json:"author_name"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // @Summary     List tickets
@@ -37,9 +41,14 @@ type ticketCommentRow struct {
 func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	o := orgFromContext(r.Context())
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT t.id, t.title, t.description, t.zendesk_status, c.name, t.created_at
+		SELECT t.id, t.title, t.description, t.zendesk_status, t.zendesk_ticket_id,
+		       c.name,
+		       (SELECT ce.email FROM customer_emails ce WHERE ce.customer_id = c.id LIMIT 1),
+		       a.name,
+		       t.created_at
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
+		LEFT JOIN agents a ON a.id = t.assignee_id
 		WHERE t.org_id = $1
 		ORDER BY t.created_at DESC
 	`, o.ID)
@@ -53,7 +62,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ReporterName, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.CreatedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return
@@ -96,10 +105,14 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := a.db.QueryContext(r.Context(), `
-		SELECT id, body, channel::text, role::text, created_at
-		FROM ticket_comments
-		WHERE ticket_id = $1
-		ORDER BY created_at ASC
+		SELECT tc.id, tc.body, tc.channel::text, tc.role::text,
+		       COALESCE(a.name, c.name, '') AS author_name,
+		       tc.created_at
+		FROM ticket_comments tc
+		LEFT JOIN agents a ON a.id = tc.agent_author_id
+		LEFT JOIN customers c ON c.id = tc.customer_author_id
+		WHERE tc.ticket_id = $1
+		ORDER BY tc.created_at ASC
 	`, ticketID)
 	if err != nil {
 		http.Error(w, "query failed", http.StatusInternalServerError)
@@ -111,7 +124,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	comments := []ticketCommentRow{}
 	for rows.Next() {
 		var c ticketCommentRow
-		if err := rows.Scan(&c.ID, &c.Body, &c.Channel, &c.Role, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Body, &c.Channel, &c.Role, &c.AuthorName, &c.CreatedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTicketComments scan: %v", err)
 			return
