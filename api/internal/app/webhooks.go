@@ -362,7 +362,20 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// Sync all comments for this ticket from the Zendesk API. This covers the
+	// case where comment.created webhooks are not fired (e.g. Zendesk does not
+	// send a separate comment.created event for the initial message when a
+	// ticket is first created). The insert is idempotent, so re-syncing on
+	// ticket.updated is safe.
+	if err := syncTicketComments(ctx, db, orgID, d.ID); err != nil {
+		return fmt.Errorf("sync comments for ticket %d: %w", d.ID, err)
+	}
+
+	return nil
 }
 
 func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) error {
@@ -719,6 +732,93 @@ func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 		return nil, fmt.Errorf("parse ticket: %w", err)
 	}
 	return &wrapper.Ticket, nil
+}
+
+// fetchZendeskTicketComments fetches all comments for a ticket from the Zendesk
+// REST API using the org's stored credentials. Returns nil if credentials are
+// not configured.
+func fetchZendeskTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) ([]webhookCommentDetail, error) {
+	var subdomain, email, apiKey string
+	err := db.QueryRowContext(ctx,
+		`SELECT COALESCE(zendesk_subdomain,''), COALESCE(zendesk_email,''), COALESCE(zendesk_api_key,'')
+		 FROM organizations WHERE id = $1`,
+		orgID,
+	).Scan(&subdomain, &email, &apiKey)
+	if err != nil {
+		return nil, fmt.Errorf("load zendesk creds: %w", err)
+	}
+	if subdomain == "" || email == "" || apiKey == "" {
+		return nil, nil
+	}
+
+	creds := base64.StdEncoding.EncodeToString([]byte(email + "/token:" + apiKey))
+	url := fmt.Sprintf("https://%s.zendesk.com/api/v2/tickets/%d/comments.json", subdomain, zendeskTicketID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Basic "+creds)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("zendesk request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("zendesk returned %s: %s", resp.Status, respBody)
+	}
+
+	var wrapper struct {
+		Comments []struct {
+			ID        flexInt64         `json:"id"`
+			AuthorID  flexInt64         `json:"author_id"`
+			Body      string            `json:"body"`
+			Public    bool              `json:"public"`
+			Via       webhookCommentVia `json:"via"`
+			CreatedAt time.Time         `json:"created_at"`
+		} `json:"comments"`
+	}
+	if err := json.Unmarshal(respBody, &wrapper); err != nil {
+		return nil, fmt.Errorf("parse comments: %w", err)
+	}
+
+	comments := make([]webhookCommentDetail, len(wrapper.Comments))
+	for i, c := range wrapper.Comments {
+		comments[i] = webhookCommentDetail{
+			ID:        c.ID,
+			TicketID:  zendeskTicketID,
+			AuthorID:  c.AuthorID,
+			Body:      c.Body,
+			Public:    c.Public,
+			Via:       c.Via,
+			CreatedAt: c.CreatedAt,
+		}
+	}
+	return comments, nil
+}
+
+// syncTicketComments fetches all comments for a ticket from the Zendesk API
+// and upserts each one. Returns nil if credentials are not configured.
+func syncTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTicketID flexInt64) error {
+	comments, err := fetchZendeskTicketComments(ctx, db, orgID, zendeskTicketID)
+	if err != nil {
+		return fmt.Errorf("fetch comments: %w", err)
+	}
+	if comments == nil {
+		return nil // credentials not configured
+	}
+	for _, c := range comments {
+		if err := handleCommentCreated(ctx, db, orgID, &c); err != nil {
+			return fmt.Errorf("upsert comment %d: %w", c.ID, err)
+		}
+	}
+	return nil
 }
 
 // mapZendeskStatus maps a raw Zendesk ticket status string to our
