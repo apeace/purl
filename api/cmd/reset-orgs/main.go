@@ -6,7 +6,6 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"log"
 	"os"
 
@@ -113,19 +112,18 @@ func resetOrg(db *sql.DB, c client) {
 }
 
 func main() {
-	clientsPath := flag.String("clients", "clients.json", "path to clients JSON file")
-	flag.Parse()
-
-	data, err := os.ReadFile(*clientsPath)
-	if err != nil {
-		log.Fatalf("read %s: %v", *clientsPath, err)
+	// PURL_CLIENTS_JSON is set by cmd.sh to pass the file contents across the
+	// Docker boundary without relying on volume mounts.
+	jsonStr := os.Getenv("PURL_CLIENTS_JSON")
+	if jsonStr == "" {
+		log.Fatal("PURL_CLIENTS_JSON is not set; run via ./cmd.sh")
 	}
 	var clients []client
-	if err := json.Unmarshal(data, &clients); err != nil {
-		log.Fatalf("parse %s: %v", *clientsPath, err)
+	if err := json.Unmarshal([]byte(jsonStr), &clients); err != nil {
+		log.Fatalf("parse clients: %v", err)
 	}
 	if len(clients) == 0 {
-		log.Fatalf("no clients found in %s", *clientsPath)
+		log.Fatal("no clients found in PURL_CLIENTS_JSON")
 	}
 
 	dsn := os.Getenv("DATABASE_URL")

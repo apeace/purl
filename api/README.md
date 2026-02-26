@@ -67,12 +67,6 @@ cp api/clients.example.json api/clients.json
 
 If `api_key` or `zendesk_webhook_secret` are empty in `clients.json`, random values are generated and printed — copy them into your Zendesk webhook config. Providing stable values in the JSON avoids having to reconfigure the webhook after each reset.
 
-To point to a different file:
-
-```bash
-./cmd.sh reset-orgs -clients /path/to/clients.json
-```
-
 ## Environment
 
 See `.env.example` for all supported variables. The defaults work out of the box with `docker compose`.

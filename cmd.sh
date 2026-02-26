@@ -16,8 +16,17 @@ fi
 CMD="$1"
 shift
 
+# If clients.json exists, pass its contents to the container via -e.
+# Newlines are stripped so the JSON fits in a single env var value.
+EXTRA_ARGS=()
+CLIENTS_FILE="$SCRIPT_DIR/api/clients.json"
+if [ -f "$CLIENTS_FILE" ]; then
+  EXTRA_ARGS+=("-e" "PURL_CLIENTS_JSON=$(tr -d '\n' < "$CLIENTS_FILE")")
+fi
+
 docker compose \
   -f "$SCRIPT_DIR/docker-compose.yml" \
   run --rm \
+  "${EXTRA_ARGS[@]}" \
   api \
   go run ./cmd/"$CMD"/main.go "$@"
