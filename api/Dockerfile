@@ -4,9 +4,9 @@ WORKDIR /app
 
 COPY go.mod go.sum ./
 RUN go mod download
+RUN go install github.com/swaggo/swag/cmd/swag@v1.16.6
 
 COPY . .
-RUN go install github.com/swaggo/swag/cmd/swag@latest
 RUN swag init --dir . --output docs
 RUN CGO_ENABLED=0 GOOS=linux go build -o server .
 RUN for dir in cmd/*/; do \
