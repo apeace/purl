@@ -11,8 +11,8 @@
           <div class="mobile-lobby-hud">
             <div class="hud">
               <div class="hud-stat">
-                <span class="hud-value">{{ hudOpen }}</span>
-                <span class="hud-label">open</span>
+                <span class="hud-value">{{ hudWaiting }}</span>
+                <span class="hud-label">waiting</span>
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
@@ -21,7 +21,7 @@
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
-                <span class="hud-value">{{ resolvedToday }}</span>
+                <span class="hud-value">{{ hudResolvedToday }}</span>
                 <span class="hud-label">resolved today</span>
               </div>
             </div>
@@ -106,7 +106,7 @@
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
-            <span class="hud-value">{{ resolvedToday }}</span>
+            <span class="hud-value">{{ hudResolvedToday }}</span>
             <span class="hud-label">resolved today</span>
           </div>
         </div>
@@ -161,8 +161,9 @@ const ticketStore = useTicketStore()
 const {
   hudLongestWait,
   hudOpen,
+  hudResolvedToday,
+  hudWaiting,
   openTickets: threads,
-  resolvedToday,
 } = storeToRefs(ticketStore)
 const { resolveTicket } = ticketStore
 

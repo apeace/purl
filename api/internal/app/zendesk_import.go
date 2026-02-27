@@ -354,10 +354,14 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 			}
 		}
 
+		status := mapZendeskStatus(ticket.Status)
+
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, received_at, zendesk_status, zendesk_ticket_id)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7::zendesk_status_category, $8)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, received_at, zendesk_status, zendesk_ticket_id, zendesk_updated_at, resolved_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7::zendesk_status_category, $8, $9,
+			         CASE WHEN $7::zendesk_status_category IN ('solved'::zendesk_status_category, 'closed'::zendesk_status_category)
+			              THEN $9::TIMESTAMPTZ ELSE NULL END)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
@@ -365,8 +369,9 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 			assigneeID,
 			orgID,
 			ticket.CreatedAt,
-			mapZendeskStatus(ticket.Status),
+			status,
 			ticket.ID,
+			ticket.UpdatedAt,
 		).Scan(&ticketID)
 		if err != nil {
 			return fmt.Errorf("insert ticket %d: %w", ticket.ID, err)

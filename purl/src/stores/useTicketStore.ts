@@ -47,6 +47,8 @@ export interface Ticket {
   // ISO timestamp of the customer's most recent message regardless of agent reply status.
   // Used to sort by most recent customer activity.
   lastCustomerReplyAt?: string
+  // ISO timestamp of when the ticket was first marked solved or closed. Undefined if not yet resolved.
+  resolvedAt?: string
   wait: string
   avatarColor: string
   status: string
@@ -140,6 +142,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     createdAt: receivedAt,
     customerWaitingSince: t.customer_waiting_since ?? undefined,
     lastCustomerReplyAt: t.last_customer_reply_at ?? undefined,
+    resolvedAt: t.resolved_at ?? undefined,
     wait: formatWait(receivedAt),
     avatarColor: avatarColor(reporterName),
     status: t.zendesk_status ?? "",
@@ -170,8 +173,6 @@ export const useTicketStore = defineStore("tickets", () => {
   const tickets = ref<Ticket[]>([])
   const zendeskSubdomain = ref("")
 
-  // TODO: derive resolvedToday from real ticket data instead of hardcoding a starting value
-  const resolvedToday = ref(8)
 
   // ── Filters ─────────────────────────────────────────────
 
@@ -238,6 +239,14 @@ export const useTicketStore = defineStore("tickets", () => {
 
   const hudOpen = computed(() => openTickets.value.length)
 
+  const hudWaiting = computed(() => openTickets.value.filter((t) => t.customerWaitingSince).length)
+
+  const hudResolvedToday = computed(() => {
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    return tickets.value.filter((t) => t.resolvedAt && new Date(t.resolvedAt) >= startOfToday).length
+  })
+
   const hudLongestWait = computed(() => {
     let maxMins = 0
     for (const t of openTickets.value) {
@@ -250,8 +259,6 @@ export const useTicketStore = defineStore("tickets", () => {
     return rem ? `${hrs}h ${rem}m` : `${hrs}h`
   })
 
-  const hudResolvedToday = computed(() => resolvedToday.value)
-
   // ── Mutations ───────────────────────────────────────────
 
   // TODO: persist status change via API
@@ -259,8 +266,8 @@ export const useTicketStore = defineStore("tickets", () => {
     const ticket = tickets.value.find((t) => t.id === id)
     if (!ticket || ticket.status === "solved" || ticket.status === "closed") return
     ticket.status = "solved"
+    ticket.resolvedAt = new Date().toISOString()
     ticket.read = true
-    resolvedToday.value++
   }
 
   // TODO: persist status change via API
@@ -628,6 +635,7 @@ export const useTicketStore = defineStore("tickets", () => {
     hudLongestWait,
     hudOpen,
     hudResolvedToday,
+    hudWaiting,
     loadComments,
     loadTickets,
     markRead,
@@ -635,7 +643,6 @@ export const useTicketStore = defineStore("tickets", () => {
     reloadTickets,
     removeTag,
     resolveTicket,
-    resolvedToday,
     sendReply,
     setAssignee,
     setStatus,
