@@ -96,8 +96,8 @@
         <!-- HUD -->
         <div class="hud">
           <div class="hud-stat">
-            <span class="hud-value">{{ hudOpen }}</span>
-            <span class="hud-label">open</span>
+            <span class="hud-value">{{ hudWaiting }}</span>
+            <span class="hud-label">waiting</span>
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
@@ -160,7 +160,6 @@ import type { Ticket } from "../stores/useTicketStore"
 const ticketStore = useTicketStore()
 const {
   hudLongestWait,
-  hudOpen,
   hudResolvedToday,
   hudWaiting,
   openTickets: threads,
