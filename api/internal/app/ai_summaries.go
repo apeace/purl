@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -10,8 +11,15 @@ import (
 	"sync/atomic"
 )
 
-// GenerateSummaries finds tickets where ai_summary IS NULL or ai_summary_stale = TRUE,
-// generates a summary via Ollama for each, and updates the DB.
+// aiAnalysis is the JSON structure returned by the LLM for each ticket.
+type aiAnalysis struct {
+	Summary     string `json:"summary"`
+	Temperature int    `json:"temperature"`
+	Title       string `json:"title"`
+}
+
+// GenerateSummaries finds tickets where ai_summary IS NULL, ai_summary_stale = TRUE,
+// or ai_title IS NULL, generates an AI analysis via Ollama for each, and updates the DB.
 // Returns count of successfully updated tickets.
 func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel string) (int, error) {
 	client := newOllamaClient(ollamaURL, ollamaModel)
@@ -23,7 +31,7 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, title, COALESCE(description, '')
 		FROM tickets
-		WHERE (ai_summary IS NULL OR ai_summary_stale = TRUE)
+		WHERE (ai_summary IS NULL OR ai_summary_stale = TRUE OR ai_title IS NULL)
 		  AND ai_summary_error_count < 3
 		ORDER BY updated_at DESC
 		LIMIT 100`,
@@ -112,17 +120,31 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 				return
 			}
 
-			prompt := buildSummaryPrompt(t.title, t.description, commentLines)
+			prompt := buildAnalysisPrompt(t.title, t.description, commentLines)
 
-			summary, err := client.chat(ctx, prompt)
+			raw, err := client.chat(ctx, prompt, "json")
 			if err != nil {
 				recordError("chat", err)
 				return
 			}
 
-			if _, err := db.ExecContext(ctx,
-				`UPDATE tickets SET ai_summary = $1, ai_summary_stale = FALSE, ai_summary_error_count = 0, ai_summary_last_error = NULL WHERE id = $2`,
-				summary, t.id,
+			var analysis aiAnalysis
+			if err := json.Unmarshal([]byte(raw), &analysis); err != nil {
+				recordError("parse json response", fmt.Errorf("%w (raw: %q)", err, raw))
+				return
+			}
+
+			// ai_title uses COALESCE so it is only set on first generation and never overwritten.
+			if _, err := db.ExecContext(ctx, `
+				UPDATE tickets
+				SET ai_title = COALESCE(ai_title, $1),
+				    ai_summary = $2,
+				    ai_temperature = $3,
+				    ai_summary_stale = FALSE,
+				    ai_summary_error_count = 0,
+				    ai_summary_last_error = NULL
+				WHERE id = $4`,
+				analysis.Title, analysis.Summary, analysis.Temperature, t.id,
 			); err != nil {
 				log.Printf("generate-summaries: ticket %s: update: %v", t.id, err)
 				return
@@ -135,9 +157,13 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 	return int(updated.Load()), nil
 }
 
-func buildSummaryPrompt(title, description string, commentLines []string) string {
+func buildAnalysisPrompt(title, description string, commentLines []string) string {
 	var b strings.Builder
-	b.WriteString("Summarize this customer support ticket in 1-2 short, direct sentences. State only the issue and current status — no intro phrase like \"The customer\" or \"This ticket\". Output only the summary, nothing else.\n\n")
+	b.WriteString("Analyze this customer support ticket and respond with a JSON object with exactly these fields:\n")
+	b.WriteString("- \"title\": A 4-5 word title summarizing what the ticket is about (e.g. \"Login issue with SSO\")\n")
+	b.WriteString("- \"summary\": 1-2 terse sentences about the current state of the ticket — issue and status only, no intro phrases like \"The customer\" or \"This ticket\"\n")
+	b.WriteString("- \"temperature\": An integer 1-10 for how urgent or frustrated the customer is (1 = patient and calm, 10 = furious or threatening to cancel)\n")
+	b.WriteString("Output only the JSON object, nothing else.\n\n")
 	b.WriteString("Title: ")
 	b.WriteString(title)
 	b.WriteString("\nDescription: ")
