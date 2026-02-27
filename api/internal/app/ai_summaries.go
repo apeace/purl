@@ -96,6 +96,7 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 			}
 
 			var commentLines []string
+			var firstCustomerBody string
 			var scanErr bool
 			for commentRows.Next() {
 				var role, body string
@@ -108,6 +109,8 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 				label := "[Customer]"
 				if role == "agent" {
 					label = "[Agent]"
+				} else if firstCustomerBody == "" {
+					firstCustomerBody = body
 				}
 				commentLines = append(commentLines, label+" "+body)
 			}
@@ -120,7 +123,12 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 				return
 			}
 
-			prompt := buildAnalysisPrompt(t.title, t.description, commentLines)
+			// Fall back to ticket description if no customer comment was found.
+			if firstCustomerBody == "" {
+				firstCustomerBody = t.description
+			}
+
+			prompt := buildAnalysisPrompt(t.title, firstCustomerBody, commentLines)
 
 			raw, err := client.chat(ctx, prompt, "json")
 			if err != nil {
@@ -157,19 +165,19 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 	return int(updated.Load()), nil
 }
 
-func buildAnalysisPrompt(title, description string, commentLines []string) string {
+func buildAnalysisPrompt(title, firstInquiry string, commentLines []string) string {
 	var b strings.Builder
 	b.WriteString("Analyze this customer support ticket and respond with a JSON object with exactly these fields:\n")
-	b.WriteString("- \"title\": A 4-5 word title summarizing what the ticket is about (e.g. \"Login issue with SSO\")\n")
+	b.WriteString("- \"title\": A 4-5 word title based only on the customer's first message (e.g. \"Login issue with SSO\")\n")
 	b.WriteString("- \"summary\": 1-2 terse sentences about the current state of the ticket — issue and status only, no intro phrases like \"The customer\" or \"This ticket\"\n")
 	b.WriteString("- \"temperature\": An integer 1-10 for how urgent or frustrated the customer is (1 = patient and calm, 10 = furious or threatening to cancel)\n")
 	b.WriteString("Output only the JSON object, nothing else.\n\n")
-	b.WriteString("Title: ")
+	b.WriteString("Ticket subject: ")
 	b.WriteString(title)
-	b.WriteString("\nDescription: ")
-	b.WriteString(description)
+	b.WriteString("\nCustomer's first message: ")
+	b.WriteString(firstInquiry)
 	if len(commentLines) > 0 {
-		b.WriteString("\n\nComments:\n")
+		b.WriteString("\n\nFull conversation:\n")
 		b.WriteString(strings.Join(commentLines, "\n"))
 	}
 	return b.String()
