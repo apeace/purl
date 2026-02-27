@@ -89,8 +89,23 @@
               <div class="card-name">{{ item.name }}</div>
               <div class="card-company">{{ item.company }}</div>
             </div>
+            <div
+              v-if="item.aiTemperature"
+              class="card-temp"
+              :style="{ background: tempColor(item.aiTemperature) }"
+              :title="`Temperature: ${item.aiTemperature}/10`"
+            />
           </div>
-          <div class="card-subject">{{ item.subject }}</div>
+          <div class="card-title">{{ item.aiTitle ?? item.subject }}</div>
+          <div
+            v-if="item.aiSummary"
+            class="card-info"
+            draggable="false"
+            @click.stop
+          >
+            <Info :size="11" />
+            <div class="card-info-tooltip">{{ item.aiSummary }}</div>
+          </div>
         </div>
       </div>
       <div class="drop-placeholder" :class="{ 'drop-placeholder--active': draggingId && !isSource && dragOver && dropIndex >= items.length }" />
@@ -99,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { GripVertical, MoreHorizontal, Paintbrush, Pencil, Trash2 } from "lucide-vue-next"
+import { GripVertical, Info, MoreHorizontal, Paintbrush, Pencil, Trash2 } from "lucide-vue-next"
 import { computed, nextTick, onMounted, ref, watch } from "vue"
 import ColorPicker from "./ColorPicker.vue"
 
@@ -109,6 +124,16 @@ interface KanbanItem {
   company: string
   subject: string
   avatarColor: string
+  aiTitle?: string
+  aiSummary?: string
+  aiTemperature?: number
+}
+
+function tempColor(n: number): string {
+  if (n <= 3) return "#34d399"
+  if (n <= 6) return "#fbbf24"
+  if (n <= 8) return "#f97316"
+  return "#ef4444"
 }
 
 const props = withDefaults(defineProps<{
@@ -395,6 +420,13 @@ onMounted(() => {
   transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1), margin-bottom 0.3s cubic-bezier(0.16, 1, 0.3, 1), padding-top 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* When the summary tooltip is visible, let it overflow the slot and paint above siblings. */
+.card-slot:has(.card-info:hover),
+.card-slot:has(.card-info:focus-within) {
+  overflow: visible;
+  z-index: 5;
+}
+
 .card-slot--ghost .card {
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -465,7 +497,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .card-avatar {
@@ -486,25 +518,85 @@ onMounted(() => {
 }
 
 .card-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.7);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-company {
-  font-size: 11px;
-  color: rgba(148, 163, 184, 0.5);
+  font-size: 10px;
+  color: rgba(148, 163, 184, 0.4);
 }
 
-.card-subject {
-  font-size: 12px;
-  color: rgba(148, 163, 184, 0.7);
+.card-temp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: transform 0.15s;
+}
+
+.card:hover .card-temp {
+  transform: scale(1.3);
+}
+
+.card-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #e2e8f0;
   line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.card-info {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  margin-left: auto;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: default;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.card-info:hover,
+.card-info:focus-within {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.card-info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: 210px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.card-info:hover .card-info-tooltip,
+.card-info:focus-within .card-info-tooltip {
+  opacity: 1;
 }
 
 </style>

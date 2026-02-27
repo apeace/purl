@@ -592,6 +592,9 @@ function navigateFromHoverQueue(ticketId: string) {
   font-size: 15px;
   font-weight: 600;
   color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qcard-company {
