@@ -108,12 +108,30 @@
         </div>
       </div>
       <div class="queue-panel">
+        <div class="hud">
+          <div class="hud-stat">
+            <span class="hud-value">{{ hudWaiting }}</span>
+            <span class="hud-label">waiting</span>
+          </div>
+          <div class="hud-divider" />
+          <div class="hud-stat">
+            <span class="hud-value">{{ hudLongestWait }}</span>
+            <span class="hud-label">longest wait</span>
+          </div>
+          <div class="hud-divider" />
+          <div class="hud-stat">
+            <span class="hud-value">{{ hudResolvedToday }}</span>
+            <span class="hud-label">resolved today</span>
+          </div>
+        </div>
+        <ShiftHealth />
         <div class="queue-list">
-          <div class="queue-section-label">Up next</div>
+          <div class="queue-section-label">{{ selectedStage?.title }}</div>
           <button
             v-for="item in displayQueue"
             :key="item.id"
             class="queue-card"
+            :class="{ 'queue-card--active': item.id === selectedTicketId }"
             @click="selectedTicketId = item.id"
           >
             <div class="qcard-top">
@@ -131,6 +149,7 @@
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ item.wait }}
               </span>
+              <ChevronRight v-if="item.id === selectedTicketId" :size="14" class="qcard-active-arrow" />
             </div>
           </button>
         </div>
@@ -191,6 +210,7 @@ import { COLUMN_COLORS } from "../components/ColorPicker.vue"
 import ConfirmModal from "../components/ConfirmModal.vue"
 import FilterPanel from "../components/FilterPanel.vue"
 import KanbanStage from "../components/KanbanStage.vue"
+import ShiftHealth from "../components/ShiftHealth.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
@@ -202,7 +222,7 @@ const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
 const { addCardToBoard, addColumn, changeColumnColor, deleteColumn, getBoardById, moveCard, renameBoard, renameColumn, reorderColumns } = kanbanStore
 const ticketStore = useTicketStore()
-const { filterKeyword, tickets } = storeToRefs(ticketStore)
+const { filterKeyword, hudLongestWait, hudResolvedToday, hudWaiting, tickets } = storeToRefs(ticketStore)
 const { filterAssignees, filterStatuses, resolveTicket } = ticketStore
 
 const selectedTicketId = ref<string | null>(null)
@@ -464,7 +484,7 @@ const stageQueue = computed(() => {
 const queueIndex = computed(() => stageQueue.value.findIndex((t) => t.id === selectedTicketId.value))
 const canGoPrev = computed(() => queueIndex.value > 0)
 const canGoNext = computed(() => queueIndex.value < stageQueue.value.length - 1)
-const displayQueue = computed(() => stageQueue.value.filter((t) => t.id !== selectedTicketId.value))
+const displayQueue = computed(() => stageQueue.value)
 
 function goPrev() {
   if (canGoPrev.value) selectedTicketId.value = stageQueue.value[queueIndex.value - 1].id
@@ -475,7 +495,8 @@ function goNext() {
 }
 
 function handleResolve() {
-  const next = displayQueue.value[0] ?? null
+  const idx = queueIndex.value
+  const next = stageQueue.value[idx + 1] ?? stageQueue.value[idx - 1] ?? null
   resolveTicket(selectedTicketId.value!)
   selectedTicketId.value = next ? next.id : null
 }
@@ -926,6 +947,73 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
+}
+
+/* ── HUD ────────────────────────────────────────────────── */
+
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 14px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.hud-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 4px;
+}
+
+.hud-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #f1f5f9;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.hud-label {
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.3;
+}
+
+.hud-divider {
+  width: 1px;
+  height: 24px;
+  background: rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.queue-card--active {
+  background: rgba(99, 102, 241, 0.06);
+  border-color: rgba(99, 102, 241, 0.22);
+}
+
+.queue-card--active:hover,
+.queue-card--active:active {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.qcard-active-arrow {
+  color: rgba(129, 140, 248, 0.6);
+  flex-shrink: 0;
 }
 
 /* ── Board / Stage picker (inline in KanbanPage) ─────────── */
