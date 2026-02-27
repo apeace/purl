@@ -1,12 +1,11 @@
 <template>
-  <div class="go-page" :class="{ 'go-page--lobby': !activeThread }">
+  <div class="go-page go-page--lobby">
     <div class="go-split">
 
-      <!-- ── Left: AI Workspace (always present) ─────────── -->
+      <!-- ── Left: AI Workspace ───────────────────────────── -->
       <div class="workspace">
 
-        <!-- Lobby: AI guides you to a task -->
-        <div v-if="!activeThread" class="workspace-lobby">
+        <div class="workspace-lobby">
           <!-- Mobile-only: HUD + health at top of lobby -->
           <div class="mobile-lobby-hud">
             <div class="hud">
@@ -69,27 +68,6 @@
           </div>
         </div>
 
-        <!-- Active: AI assist + thread conversation -->
-        <div v-else class="workspace-active">
-          <!-- Strategy bar — back to lobby + queue nav -->
-          <div v-if="chosenOption" class="strategy-bar">
-            <button class="strategy-header" @click="activeId = null">
-              <component :is="chosenOption.icon" :size="16" :style="{ color: chosenOption.color }" />
-              <span class="strategy-header-label">{{ chosenOption.label }}</span>
-            </button>
-            <div class="strategy-nav">
-              <span class="strategy-nav-pos">{{ queueIndex + 1 }} / {{ sortedQueue.length }}</span>
-              <button class="strategy-nav-btn" :disabled="!canGoPrev" @click="goPrev">
-                <ChevronLeft :size="18" />
-              </button>
-              <button class="strategy-nav-btn" :disabled="!canGoNext" @click="goNext">
-                <ChevronRight :size="18" />
-              </button>
-            </div>
-          </div>
-
-          <TicketDetail :ticket-id="activeId!" @resolve="resolve" />
-        </div>
       </div>
 
       <!-- ── Right: Dashboard (always visible) ───────────── -->
@@ -123,10 +101,8 @@
             <button
               v-for="thread in displayQueue"
               :key="thread.id"
-              :ref="el => setQueueCardRef(el, thread.id)"
               class="queue-card"
-              :class="{ 'queue-card--active': thread.id === activeId }"
-              @click="activeId = thread.id"
+              @click="navigateFromHoverQueue(thread.id)"
             >
               <div class="qcard-top">
                 <div class="qcard-avatar" :style="{ background: thread.avatarColor }">
@@ -143,7 +119,6 @@
                 <span class="qcard-wait">
                   <Clock :size="11" /> {{ thread.wait }}
                 </span>
-                <ChevronRight v-if="thread.id === activeId" :size="14" class="qcard-active-arrow" />
               </div>
             </button>
           </template>
@@ -155,15 +130,17 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
+import { Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
-import { computed, nextTick, ref, watch } from "vue"
+import { computed, ref, watch } from "vue"
+import { useRouter } from "vue-router"
 import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
-import TicketDetail from "../components/TicketDetail.vue"
 import { useAiStore } from "../stores/useAiStore"
 import { lastCustomerReplyMs, parseWait, waitingMinutes, useTicketStore } from "../stores/useTicketStore"
 import type { Ticket } from "../stores/useTicketStore"
+
+const router = useRouter()
 
 const ticketStore = useTicketStore()
 const {
@@ -172,7 +149,6 @@ const {
   hudWaiting,
   openTickets: threads,
 } = storeToRefs(ticketStore)
-const { resolveTicket } = ticketStore
 
 const aiStore = useAiStore()
 const { suggestions: aiSuggestions } = storeToRefs(aiStore)
@@ -186,16 +162,15 @@ const priorityOptions = [
 
 // ── State ────────────────────────────────────────────────
 
-const activeId = ref<string | null>(null)
-const chosenPriority = ref<string | null>(null)
 const hoveredPriority = ref<string | null>(null)
+// Persists the last hovered strategy so queue-card clicks retain context even
+// after the mouse leaves the priority card.
+const lastHoveredPriority = ref<string | null>(null)
 
-const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
+watch(hoveredPriority, (val) => { if (val !== null) lastHoveredPriority.value = val })
 
-// In active state, show the full sorted queue (with arrow on the current ticket).
-// In lobby state, sort by the hovered strategy or fall back to default order.
+// Show the sorted queue for the hovered strategy; empty for "coming soon" ones.
 const displayQueue = computed(() => {
-  if (activeThread.value) return sortedQueue.value
   const s = hoveredPriority.value
   if (!s || s === "urgent" || s === "quick") return []
   const all = [...threads.value]
@@ -204,10 +179,9 @@ const displayQueue = computed(() => {
   return all
 })
 
-const isQueueComingSoon = computed(() => {
-  if (activeThread.value) return false
-  return hoveredPriority.value === "urgent" || hoveredPriority.value === "quick"
-})
+const isQueueComingSoon = computed(() =>
+  hoveredPriority.value === "urgent" || hoveredPriority.value === "quick"
+)
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
@@ -235,27 +209,6 @@ const cardPreviews = computed<Record<string, Ticket | null>>(() => {
   }
 })
 
-const chosenOption = computed(() => priorityOptions.find((o) => o.id === chosenPriority.value) ?? null)
-
-const sortedQueue = computed(() => {
-  const all = [...threads.value]
-  const id = chosenPriority.value
-  if (id === "urgent") {
-    all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
-  } else if (id === "waiting") {
-    all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
-  } else if (id === "queue") {
-    all.sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
-  } else if (id === "quick") {
-    all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
-  }
-  return all
-})
-
-const queueIndex = computed(() => sortedQueue.value.findIndex((t) => t.id === activeId.value))
-const canGoPrev = computed(() => queueIndex.value > 0)
-const canGoNext = computed(() => queueIndex.value < sortedQueue.value.length - 1)
-
 const recommendedStrategy = computed(() => {
   const maxWait = Math.max(...threads.value.map((t) => parseWait(t.wait)))
   if (maxWait >= 120) return "waiting"
@@ -264,49 +217,23 @@ const recommendedStrategy = computed(() => {
 
 // ── Actions ──────────────────────────────────────────────
 
-function goPrev() {
-  if (canGoPrev.value) activeId.value = sortedQueue.value[queueIndex.value - 1].id
-}
-
-function goNext() {
-  if (canGoNext.value) activeId.value = sortedQueue.value[queueIndex.value + 1].id
-}
-
 function choosePriority(opt: typeof priorityOptions[number]) {
   if (opt.id === "urgent" || opt.id === "quick") return
-  chosenPriority.value = opt.id
   const first = cardPreviews.value[opt.id]
-  if (first) {
-    activeId.value = first.id
+  if (!first) return
+  const queueParam = opt.id === "waiting" ? "longest" : "work"
+  router.push({ path: `/ticket/${first.id}`, query: { queue: queueParam } })
+}
+
+function navigateFromHoverQueue(ticketId: string) {
+  const strategy = lastHoveredPriority.value
+  if (!strategy || strategy === "urgent" || strategy === "quick") {
+    router.push(`/ticket/${ticketId}`)
+    return
   }
+  const queueParam = strategy === "waiting" ? "longest" : "work"
+  router.push({ path: `/ticket/${ticketId}`, query: { queue: queueParam } })
 }
-
-function resolve() {
-  const currentId = activeId.value
-  const idx = queueIndex.value
-  const next = sortedQueue.value[idx + 1] ?? sortedQueue.value[idx - 1] ?? null
-  resolveTicket(currentId!)
-  activeId.value = next ? next.id : null
-}
-
-watch(activeId, (val) => {
-  if (val == null) {
-    chosenPriority.value = null
-  }
-})
-
-// ── Queue card scroll-into-view ───────────────────────────
-
-const queueCardRefs = ref<Record<string, HTMLElement>>({})
-
-function setQueueCardRef(el: unknown, id: string) {
-  if (el instanceof HTMLElement) queueCardRefs.value[id] = el
-}
-
-watch(activeId, (id) => {
-  if (!id) return
-  nextTick(() => queueCardRefs.value[id]?.scrollIntoView({ block: "nearest" }))
-})
 </script>
 
 <style scoped>
@@ -538,88 +465,6 @@ watch(activeId, (id) => {
 }
 
 
-/* ── Strategy bar ─────────────────────────────────────── */
-
-.strategy-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  flex-shrink: 0;
-}
-
-.strategy-header {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  background: none;
-  border: none;
-  padding: 12px 20px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: background 0.15s;
-  border-radius: 0;
-}
-
-.strategy-header:hover {
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.strategy-header-label {
-  font-size: 18px;
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.strategy-nav {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-right: 12px;
-}
-
-.strategy-nav-pos {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(148, 163, 184, 0.45);
-  margin-right: 8px;
-}
-
-.strategy-nav-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 9px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.03);
-  color: #e2e8f0;
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s;
-}
-
-.strategy-nav-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-.strategy-nav-btn:disabled {
-  opacity: 0.25;
-  cursor: default;
-}
-
-/* ── Active state ──────────────────────────────────────── */
-
-.workspace-active {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  animation: content-up 0.35s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
 /* ── Queue panel (right, always visible) ───────────────── */
 
 .queue-panel {
@@ -775,22 +620,6 @@ watch(activeId, (id) => {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
-}
-
-.queue-card--active {
-  background: rgba(99, 102, 241, 0.06);
-  border-color: rgba(99, 102, 241, 0.22);
-}
-
-.queue-card--active:hover,
-.queue-card--active:active {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.35);
-}
-
-.qcard-active-arrow {
-  color: rgba(129, 140, 248, 0.6);
-  flex-shrink: 0;
 }
 
 .queue-coming-soon {

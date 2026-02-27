@@ -3,14 +3,16 @@ import type { RouteRecordRaw } from "vue-router"
 import DashboardPage from "../pages/DashboardPage.vue"
 import GoPage from "../pages/GoPage.vue"
 import InboxPage from "../pages/InboxPage.vue"
-import LoginPage from "../pages/LoginPage.vue"
 import KanbanPage from "../pages/KanbanPage.vue"
+import LoginPage from "../pages/LoginPage.vue"
 import ReportingPage from "../pages/ReportingPage.vue"
 import SettingsPage from "../pages/SettingsPage.vue"
+import TicketPage from "../pages/TicketPage.vue"
 
 const routes: RouteRecordRaw[] = [
   { path: "/", redirect: "/go" },
   { path: "/go", component: GoPage },
+  { path: "/ticket/:id", component: TicketPage },
   { path: "/dashboard", component: DashboardPage },
   { path: "/login", component: LoginPage, meta: { public: true } },
   { path: "/kanban", component: KanbanPage },
