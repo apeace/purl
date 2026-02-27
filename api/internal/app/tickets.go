@@ -24,6 +24,9 @@ type ticketRow struct {
 	// CustomerWaitingSince is the timestamp of the customer's most recent message when no agent
 	// reply has been sent after it, or null if the agent has already replied.
 	CustomerWaitingSince *time.Time `json:"customer_waiting_since"`
+	// LastCustomerReplyAt is the timestamp of the customer's most recent message, regardless of
+	// whether the agent has replied. Used to sort tickets by most recent customer activity.
+	LastCustomerReplyAt *time.Time `json:"last_customer_reply_at"`
 }
 
 type ticketCommentRow struct {
@@ -74,7 +77,11 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 		                 ELSE NULL
 		            END
 		        FROM ticket_comments tc
-		        WHERE tc.ticket_id = t.id)
+		        WHERE tc.ticket_id = t.id),
+		       -- Most recent customer message timestamp regardless of agent reply status.
+		       (SELECT MAX(COALESCE(tc.received_at, tc.created_at))
+		        FROM ticket_comments tc
+		        WHERE tc.ticket_id = t.id AND tc.role = 'customer')
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
 		LEFT JOIN agents a ON a.id = t.assignee_id
@@ -91,7 +98,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.ReceivedAt, &t.CustomerWaitingSince); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.ReceivedAt, &t.CustomerWaitingSince, &t.LastCustomerReplyAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return

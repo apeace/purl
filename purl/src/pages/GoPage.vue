@@ -154,7 +154,7 @@ import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useAiStore } from "../stores/useAiStore"
-import { parseWait, waitingMinutes, useTicketStore } from "../stores/useTicketStore"
+import { lastCustomerReplyMs, parseWait, waitingMinutes, useTicketStore } from "../stores/useTicketStore"
 import type { Ticket } from "../stores/useTicketStore"
 
 const ticketStore = useTicketStore()
@@ -173,7 +173,7 @@ const priorityOptions = [
   { id: "urgent", label: "Urgent first", description: "Tackle high-priority tickets before they escalate", icon: Flame, color: "#f87171" },
   { id: "waiting", label: "Longest waiting", description: "Help the customers who've been waiting the most", icon: Hourglass, color: "#fbbf24" },
   { id: "quick", label: "Quick wins", description: "Clear straightforward tickets to build momentum", icon: Zap, color: "#34d399" },
-  { id: "queue", label: "Work the queue", description: "Go through tickets in the order they came in", icon: ListOrdered, color: "#818cf8" },
+  { id: "queue", label: "Work the queue", description: "Handle tickets with the most recent customer activity first", icon: ListOrdered, color: "#818cf8" },
 ]
 
 // ── State ────────────────────────────────────────────────
@@ -187,11 +187,12 @@ const displayQueue = computed(() => activeThread.value ? queue.value : threads.v
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
+  const waitingCount = threads.value.filter((t) => t.customerWaitingSince).length
   return {
     urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
     waiting: { stat: hudLongestWait.value, detail: "" },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
-    queue: { stat: `${hudOpen.value} open`, detail: `${resolvedToday.value} resolved` },
+    queue: { stat: `${waitingCount} waiting`, detail: "" },
   }
 })
 
@@ -200,13 +201,14 @@ const cardPreviews = computed<Record<string, Ticket | null>>(() => {
 
   const byWait = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
   const byWaiting = [...all].sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
+  const byQueue = [...all].sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   const byQuick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
 
   return {
     urgent: byWait[0] ?? null,
     waiting: byWaiting[0] ?? null,
     quick: byQuick[0] ?? null,
-    queue: all[0] ?? null,
+    queue: byQueue[0] ?? null,
   }
 })
 
@@ -219,6 +221,8 @@ const sortedQueue = computed(() => {
     all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
   } else if (id === "waiting") {
     all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
+  } else if (id === "queue") {
+    all.sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   } else if (id === "quick") {
     all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
   }

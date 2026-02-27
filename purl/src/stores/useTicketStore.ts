@@ -44,6 +44,9 @@ export interface Ticket {
   // ISO timestamp of the customer's most recent unanswered message, or undefined if the agent
   // has already replied. Used to sort by longest waiting.
   customerWaitingSince?: string
+  // ISO timestamp of the customer's most recent message regardless of agent reply status.
+  // Used to sort by most recent customer activity.
+  lastCustomerReplyAt?: string
   wait: string
   avatarColor: string
   status: string
@@ -76,6 +79,12 @@ export function avatarColor(name: string): string {
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+/** Returns the epoch ms of the customer's most recent message, or 0 if none. Used to sort by most recent activity. */
+export function lastCustomerReplyMs(ticket: Ticket): number {
+  if (!ticket.lastCustomerReplyAt) return 0
+  return new Date(ticket.lastCustomerReplyAt).getTime()
 }
 
 /** Returns how many minutes a customer has been waiting for a reply, or 0 if the agent has replied. */
@@ -130,6 +139,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     description: stripHtml(t.description ?? ""),
     createdAt: receivedAt,
     customerWaitingSince: t.customer_waiting_since ?? undefined,
+    lastCustomerReplyAt: t.last_customer_reply_at ?? undefined,
     wait: formatWait(receivedAt),
     avatarColor: avatarColor(reporterName),
     status: t.zendesk_status ?? "",
