@@ -341,17 +341,26 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 	var ticketID string
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id,
-		                     zendesk_status, zendesk_ticket_id, received_at)
-		VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7, $8)
+		                     zendesk_status, zendesk_ticket_id, received_at, zendesk_updated_at, resolved_at)
+		VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7, $8, $9,
+		        CASE WHEN $6::zendesk_status_category IN ('solved'::zendesk_status_category, 'closed'::zendesk_status_category)
+		             THEN $9::TIMESTAMPTZ ELSE NULL END)
 		ON CONFLICT (org_id, zendesk_ticket_id) DO UPDATE SET
-			title          = EXCLUDED.title,
-			description    = EXCLUDED.description,
-			reporter_id    = EXCLUDED.reporter_id,
-			assignee_id    = EXCLUDED.assignee_id,
-			zendesk_status = EXCLUDED.zendesk_status
+			title              = EXCLUDED.title,
+			description        = EXCLUDED.description,
+			reporter_id        = EXCLUDED.reporter_id,
+			assignee_id        = EXCLUDED.assignee_id,
+			zendesk_status     = EXCLUDED.zendesk_status,
+			zendesk_updated_at = EXCLUDED.zendesk_updated_at,
+			-- Preserve original resolved_at when already set; clear it if no longer solved/closed.
+			resolved_at        = CASE
+				WHEN EXCLUDED.zendesk_status IN ('solved'::zendesk_status_category, 'closed'::zendesk_status_category)
+				THEN COALESCE(tickets.resolved_at, EXCLUDED.zendesk_updated_at)
+				ELSE NULL
+			END
 		RETURNING id`,
 		d.Subject, d.Description, reporterID, assigneeID, orgID,
-		newStatus, d.ID, d.CreatedAt,
+		newStatus, d.ID, d.CreatedAt, d.UpdatedAt,
 	).Scan(&ticketID)
 	if err != nil {
 		return fmt.Errorf("upsert ticket: %w", err)

@@ -10,26 +10,38 @@ import (
 )
 
 type ticketRow struct {
-	ID              string    `json:"id"`
-	Title           string    `json:"title"`
-	Description     string    `json:"description"`
-	ZendeskStatus   *string   `json:"zendesk_status"`
-	ZendeskTicketID *int64    `json:"zendesk_ticket_id"`
-	ReporterName    string    `json:"reporter_name"`
-	ReporterEmail   *string   `json:"reporter_email"`
-	AssigneeName    *string   `json:"assignee_name"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string  `json:"id"`
+	Title           string  `json:"title"`
+	Description     string  `json:"description"`
+	ZendeskStatus   *string `json:"zendesk_status"`
+	ZendeskTicketID *int64  `json:"zendesk_ticket_id"`
+	ReporterName    string  `json:"reporter_name"`
+	ReporterEmail   *string `json:"reporter_email"`
+	AssigneeName    *string `json:"assignee_name"`
+	// ReceivedAt is COALESCE(received_at, created_at) — the Zendesk creation time when available,
+	// otherwise the time Purl first stored the ticket.
+	ReceivedAt time.Time `json:"received_at"`
+	// CustomerWaitingSince is the timestamp of the customer's most recent message when no agent
+	// reply has been sent after it, or null if the agent has already replied.
+	CustomerWaitingSince *time.Time `json:"customer_waiting_since"`
+	// LastCustomerReplyAt is the timestamp of the customer's most recent message, regardless of
+	// whether the agent has replied. Used to sort tickets by most recent customer activity.
+	LastCustomerReplyAt *time.Time `json:"last_customer_reply_at"`
+	// ResolvedAt is when the ticket was first marked solved or closed. Null if not yet resolved.
+	ResolvedAt *time.Time `json:"resolved_at"`
 }
 
 type ticketCommentRow struct {
-	ID                  string     `json:"id"`
-	Body                string     `json:"body"`
-	HtmlBody            *string    `json:"html_body"`
-	Channel             string     `json:"channel"`
-	Role                string     `json:"role"`
-	AuthorName          string     `json:"author_name"`
-	AuthorDisplayName   *string    `json:"author_display_name"`
-	CreatedAt           time.Time  `json:"created_at"`
+	ID                string  `json:"id"`
+	Body              string  `json:"body"`
+	HtmlBody          *string `json:"html_body"`
+	Channel           string  `json:"channel"`
+	Role              string  `json:"role"`
+	AuthorName        string  `json:"author_name"`
+	AuthorDisplayName *string `json:"author_display_name"`
+	// ReceivedAt is COALESCE(received_at, created_at) — the Zendesk comment time when available,
+	// otherwise the time Purl first stored the comment.
+	ReceivedAt          time.Time  `json:"received_at"`
 	CallID              *int64     `json:"call_id"`
 	HasRecording        bool       `json:"has_recording"`
 	TranscriptionText   *string    `json:"transcription_text"`
@@ -57,7 +69,22 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 		       c.name,
 		       (SELECT ce.email FROM customer_emails ce WHERE ce.customer_id = c.id LIMIT 1),
 		       a.name,
-		       t.created_at
+		       COALESCE(t.received_at, t.created_at),
+		       -- Most recent customer message timestamp, or null if an agent has already replied.
+		       -- COALESCE(received_at, created_at) handles older rows that predate the received_at column.
+		       (SELECT
+		            CASE WHEN MAX(CASE WHEN tc.role = 'customer' THEN COALESCE(tc.received_at, tc.created_at) END) >
+		                      COALESCE(MAX(CASE WHEN tc.role = 'agent' THEN COALESCE(tc.received_at, tc.created_at) END), '-infinity'::timestamptz)
+		                 THEN MAX(CASE WHEN tc.role = 'customer' THEN COALESCE(tc.received_at, tc.created_at) END)
+		                 ELSE NULL
+		            END
+		        FROM ticket_comments tc
+		        WHERE tc.ticket_id = t.id),
+		       -- Most recent customer message timestamp regardless of agent reply status.
+		       (SELECT MAX(COALESCE(tc.received_at, tc.created_at))
+		        FROM ticket_comments tc
+		        WHERE tc.ticket_id = t.id AND tc.role = 'customer'),
+		       t.resolved_at
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
 		LEFT JOIN agents a ON a.id = t.assignee_id
@@ -74,7 +101,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.ReceivedAt, &t.CustomerWaitingSince, &t.LastCustomerReplyAt, &t.ResolvedAt); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return
@@ -120,7 +147,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 		SELECT tc.id, tc.body, tc.html_body, tc.channel::text, tc.role::text,
 		       COALESCE(a.name, c.name, '') AS author_name,
 		       tc.author_display_name,
-		       tc.created_at,
+		       COALESCE(tc.received_at, tc.created_at),
 		       tc.call_id,
 		       tc.recording_url IS NOT NULL AS has_recording,
 		       tc.transcription_text,
@@ -147,7 +174,7 @@ func (a *App) listTicketComments(w http.ResponseWriter, r *http.Request) {
 	comments := []ticketCommentRow{}
 	for rows.Next() {
 		var c ticketCommentRow
-		if err := rows.Scan(&c.ID, &c.Body, &c.HtmlBody, &c.Channel, &c.Role, &c.AuthorName, &c.AuthorDisplayName, &c.CreatedAt,
+		if err := rows.Scan(&c.ID, &c.Body, &c.HtmlBody, &c.Channel, &c.Role, &c.AuthorName, &c.AuthorDisplayName, &c.ReceivedAt,
 			&c.CallID, &c.HasRecording, &c.TranscriptionText, &c.TranscriptionStatus,
 			&c.CallDuration, &c.CallFrom, &c.CallTo, &c.AnsweredByName,
 			&c.CallLocation, &c.CallStartedAt); err != nil {

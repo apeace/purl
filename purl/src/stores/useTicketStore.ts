@@ -41,6 +41,14 @@ export interface Ticket {
   subject: string
   description: string
   createdAt: string
+  // ISO timestamp of the customer's most recent unanswered message, or undefined if the agent
+  // has already replied. Used to sort by longest waiting.
+  customerWaitingSince?: string
+  // ISO timestamp of the customer's most recent message regardless of agent reply status.
+  // Used to sort by most recent customer activity.
+  lastCustomerReplyAt?: string
+  // ISO timestamp of when the ticket was first marked solved or closed. Undefined if not yet resolved.
+  resolvedAt?: string
   wait: string
   avatarColor: string
   status: string
@@ -73,6 +81,18 @@ export function avatarColor(name: string): string {
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+/** Returns the epoch ms of the customer's most recent message, or 0 if none. Used to sort by most recent activity. */
+export function lastCustomerReplyMs(ticket: Ticket): number {
+  if (!ticket.lastCustomerReplyAt) return 0
+  return new Date(ticket.lastCustomerReplyAt).getTime()
+}
+
+/** Returns how many minutes a customer has been waiting for a reply, or 0 if the agent has replied. */
+export function waitingMinutes(ticket: Ticket): number {
+  if (!ticket.customerWaitingSince) return 0
+  return Math.floor((Date.now() - new Date(ticket.customerWaitingSince).getTime()) / 60000)
 }
 
 export function parseWait(str: string): number {
@@ -109,7 +129,7 @@ function toTicket(raw: AppTicketRow): Ticket {
   const t = raw as TicketRowExt
   const id = t.id ?? ""
   const reporterName = t.reporter_name ?? ""
-  const createdAt = t.created_at ?? ""
+  const receivedAt = t.received_at ?? ""
   const zendeskId = t.zendesk_ticket_id
   return {
     id,
@@ -119,14 +139,17 @@ function toTicket(raw: AppTicketRow): Ticket {
     zendeskTicketId: zendeskId ?? undefined,
     subject: t.title ?? "",
     description: stripHtml(t.description ?? ""),
-    createdAt,
-    wait: formatWait(createdAt),
+    createdAt: receivedAt,
+    customerWaitingSince: t.customer_waiting_since ?? undefined,
+    lastCustomerReplyAt: t.last_customer_reply_at ?? undefined,
+    resolvedAt: t.resolved_at ?? undefined,
+    wait: formatWait(receivedAt),
     avatarColor: avatarColor(reporterName),
     status: t.zendesk_status ?? "",
     read: false,
     starred: false,
     labels: [],
-    time: formatTime(createdAt),
+    time: formatTime(receivedAt),
     email: t.reporter_email ?? "",
     phone: "",
     subscription: { status: "active", id: "", plan: "" },
@@ -136,7 +159,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     notes: "",
     messages: [],
     ticketHistory: [
-      { time: formatWait(createdAt), event: "Ticket created" },
+      { time: formatWait(receivedAt), event: "Ticket created" },
     ],
     subscriberHistory: [],
   }
@@ -150,8 +173,6 @@ export const useTicketStore = defineStore("tickets", () => {
   const tickets = ref<Ticket[]>([])
   const zendeskSubdomain = ref("")
 
-  // TODO: derive resolvedToday from real ticket data instead of hardcoding a starting value
-  const resolvedToday = ref(8)
 
   // ── Filters ─────────────────────────────────────────────
 
@@ -218,21 +239,25 @@ export const useTicketStore = defineStore("tickets", () => {
 
   const hudOpen = computed(() => openTickets.value.length)
 
-  const hudLongestWait = computed(() => {
-    if (!openTickets.value.length) return "0m"
-    let max = 0
-    let maxStr = "0m"
-    for (const t of openTickets.value) {
-      const mins = parseWait(t.wait)
-      if (mins > max) {
-        max = mins
-        maxStr = t.wait
-      }
-    }
-    return maxStr
+  const hudWaiting = computed(() => openTickets.value.length)
+
+  const hudResolvedToday = computed(() => {
+    const startOfToday = new Date()
+    startOfToday.setHours(0, 0, 0, 0)
+    return tickets.value.filter((t) => t.resolvedAt && new Date(t.resolvedAt) >= startOfToday).length
   })
 
-  const hudResolvedToday = computed(() => resolvedToday.value)
+  const hudLongestWait = computed(() => {
+    let maxMins = 0
+    for (const t of openTickets.value) {
+      const mins = waitingMinutes(t)
+      if (mins > maxMins) maxMins = mins
+    }
+    if (maxMins < 60) return `${maxMins}m`
+    const hrs = Math.floor(maxMins / 60)
+    const rem = maxMins % 60
+    return rem ? `${hrs}h ${rem}m` : `${hrs}h`
+  })
 
   // ── Mutations ───────────────────────────────────────────
 
@@ -241,8 +266,8 @@ export const useTicketStore = defineStore("tickets", () => {
     const ticket = tickets.value.find((t) => t.id === id)
     if (!ticket || ticket.status === "solved" || ticket.status === "closed") return
     ticket.status = "solved"
+    ticket.resolvedAt = new Date().toISOString()
     ticket.read = true
-    resolvedToday.value++
   }
 
   // TODO: persist status change via API
@@ -396,7 +421,7 @@ export const useTicketStore = defineStore("tickets", () => {
       id: index,
       from: role === "agent" ? "agent" : "customer",
       channel,
-      time: formatWait(c.created_at ?? ""),
+      time: formatTime(c.received_at ?? ""),
       text: displayText,
       htmlBody: displayHtml,
       authorName: displayAuthor,
@@ -610,6 +635,7 @@ export const useTicketStore = defineStore("tickets", () => {
     hudLongestWait,
     hudOpen,
     hudResolvedToday,
+    hudWaiting,
     loadComments,
     loadTickets,
     markRead,
@@ -617,7 +643,6 @@ export const useTicketStore = defineStore("tickets", () => {
     reloadTickets,
     removeTag,
     resolveTicket,
-    resolvedToday,
     sendReply,
     setAssignee,
     setStatus,
