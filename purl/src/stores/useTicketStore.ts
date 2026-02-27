@@ -61,6 +61,10 @@ export interface Ticket {
   subscription: { status: string; id: string; plan: string }
   tags: string[]
   temperature: string
+  // AI-generated fields. aiTitle is set once and never overwritten; summary/temperature update on each reply.
+  aiTitle?: string
+  aiSummary?: string
+  aiTemperature?: number
   assignee: string
   notes: string
   messages: Message[]
@@ -155,6 +159,9 @@ function toTicket(raw: AppTicketRow): Ticket {
     subscription: { status: "active", id: "", plan: "" },
     tags: [],
     temperature: "warm",
+    aiTitle: t.ai_title ?? undefined,
+    aiSummary: t.ai_summary ?? undefined,
+    aiTemperature: t.ai_temperature ?? undefined,
     assignee: t.assignee_name ?? "Unassigned",
     notes: "",
     messages: [],

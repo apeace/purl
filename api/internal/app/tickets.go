@@ -29,6 +29,12 @@ type ticketRow struct {
 	LastCustomerReplyAt *time.Time `json:"last_customer_reply_at"`
 	// ResolvedAt is when the ticket was first marked solved or closed. Null if not yet resolved.
 	ResolvedAt *time.Time `json:"resolved_at"`
+	// AiTitle is a 4-5 word AI-generated title. Set once on first analysis and never overwritten.
+	AiTitle *string `json:"ai_title"`
+	// AiSummary is a 1-2 sentence AI-generated summary of the ticket's current state.
+	AiSummary *string `json:"ai_summary"`
+	// AiTemperature is a 1-10 score of how urgent or frustrated the customer is.
+	AiTemperature *int `json:"ai_temperature"`
 }
 
 type ticketCommentRow struct {
@@ -84,7 +90,10 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 		       (SELECT MAX(COALESCE(tc.received_at, tc.created_at))
 		        FROM ticket_comments tc
 		        WHERE tc.ticket_id = t.id AND tc.role = 'customer'),
-		       t.resolved_at
+		       t.resolved_at,
+		       t.ai_title,
+		       t.ai_summary,
+		       t.ai_temperature
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
 		LEFT JOIN agents a ON a.id = t.assignee_id
@@ -101,7 +110,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.ReceivedAt, &t.CustomerWaitingSince, &t.LastCustomerReplyAt, &t.ResolvedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.ReceivedAt, &t.CustomerWaitingSince, &t.LastCustomerReplyAt, &t.ResolvedAt, &t.AiTitle, &t.AiSummary, &t.AiTemperature); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return

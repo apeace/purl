@@ -168,9 +168,23 @@
 
           <!-- Subject + preview -->
           <div class="row-content">
-            <span class="row-subject">{{ email.subject }}</span>
+            <span
+              v-if="email.aiTemperature"
+              class="row-temp-dot"
+              :style="{ background: tempColor(email.aiTemperature) }"
+              :title="`Temperature: ${email.aiTemperature}/10`"
+            />
+            <span class="row-subject">{{ email.aiTitle ?? email.subject }}</span>
             <span class="row-sep"> — </span>
             <span class="row-preview">{{ email.preview }}</span>
+            <div
+              v-if="email.aiSummary"
+              class="row-info"
+              @click.stop
+            >
+              <Info :size="11" />
+              <div class="row-info-tooltip">{{ email.aiSummary }}</div>
+            </div>
           </div>
 
           <!-- Status pill -->
@@ -249,13 +263,27 @@
                 <div class="qcard-name">{{ item.sender.name }}
                   <span v-if="item.company" class="qcard-company">· {{ item.company }}</span>
                 </div>
-                <div class="qcard-subject">{{ item.subject }}</div>
+                <div class="qcard-title">{{ item.aiTitle ?? item.subject }}</div>
               </div>
+              <div
+                v-if="item.aiTemperature"
+                class="qcard-temp"
+                :style="{ background: tempColor(item.aiTemperature) }"
+                :title="`Temperature: ${item.aiTemperature}/10`"
+              />
             </div>
             <div class="qcard-footer">
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ item.wait }}
               </span>
+              <div
+                v-if="item.aiSummary"
+                class="qcard-info"
+                @click.stop
+              >
+                <Info :size="11" />
+                <div class="qcard-info-tooltip">{{ item.aiSummary }}</div>
+              </div>
             </div>
           </button>
         </div>
@@ -265,7 +293,7 @@
 </template>
 
 <script setup lang="ts">
-import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Clock, Inbox, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
+import { Archive, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, Clock, Inbox, Info, MailOpen, RefreshCw, Star, Trash2 } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue"
 import InboxTabs from "../components/InboxTabs.vue"
@@ -342,6 +370,13 @@ function timeColor(createdAt: string) {
   return "rgba(148, 163, 184, 0.4)"
 }
 
+function tempColor(n: number): string {
+  if (n <= 3) return "#34d399"
+  if (n <= 6) return "#fbbf24"
+  if (n <= 8) return "#f97316"
+  return "#ef4444"
+}
+
 // ── Email rows ───────────────────────────────────────────
 
 const emails = computed(() => {
@@ -377,6 +412,9 @@ const emails = computed(() => {
     company: t.company,
     createdAt: t.createdAt,
     wait: t.wait,
+    aiTitle: t.aiTitle,
+    aiSummary: t.aiSummary,
+    aiTemperature: t.aiTemperature,
   }))
 })
 
@@ -793,17 +831,17 @@ function refresh() {
 }
 
 .sender-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  color: #94a3b8;
+  color: rgba(148, 163, 184, 0.7);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .email-row--unread .sender-name {
-  font-weight: 700;
-  color: #f1f5f9;
+  font-weight: 600;
+  color: #94a3b8;
 }
 
 /* ── Row: content ────────────────────────────────────────── */
@@ -812,23 +850,31 @@ function refresh() {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
   padding-right: 12px;
+  position: relative;
+}
+
+.row-temp-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-right: 6px;
 }
 
 .row-subject {
   font-size: 13px;
-  font-weight: 400;
-  color: #94a3b8;
+  font-weight: 500;
+  color: #e2e8f0;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .email-row--unread .row-subject {
-  font-weight: 600;
-  color: #e2e8f0;
+  font-weight: 700;
 }
 
 .row-sep {
@@ -843,6 +889,50 @@ function refresh() {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.row-info {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 6px;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: default;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.row-info:hover,
+.row-info:focus-within {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.row-info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: 240px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.row-info:hover .row-info-tooltip,
+.row-info:focus-within .row-info-tooltip {
+  opacity: 1;
 }
 
 /* ── Row: status pill ────────────────────────────────────── */
@@ -1149,23 +1239,42 @@ function refresh() {
 }
 
 .qcard-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qcard-company {
   font-weight: 400;
-  color: rgba(148, 163, 184, 0.5);
+  color: rgba(148, 163, 184, 0.4);
 }
 
-.qcard-subject {
+.qcard-title {
   font-size: 14px;
-  color: rgba(148, 163, 184, 0.6);
+  font-weight: 500;
+  color: #e2e8f0;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.qcard-temp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: flex-start;
+  margin-top: 4px;
+  transition: transform 0.15s;
+}
+
+.queue-card:hover .qcard-temp {
+  transform: scale(1.3);
 }
 
 .qcard-footer {
@@ -1180,6 +1289,46 @@ function refresh() {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
+}
+
+.qcard-info {
+  display: flex;
+  align-items: center;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: default;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.qcard-info:hover,
+.qcard-info:focus-within {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.qcard-info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: 220px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.qcard-info:hover .qcard-info-tooltip,
+.qcard-info:focus-within .qcard-info-tooltip {
+  opacity: 1;
 }
 
 /* ── Intermediate screens ────────────────────────────────── */

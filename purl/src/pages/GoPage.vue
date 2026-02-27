@@ -45,7 +45,7 @@
                 <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
                   <Sparkles :size="10" /> Recommended
                 </div>
-                <ComingSoon v-if="opt.id === 'urgent' || opt.id === 'quick'" />
+                <ComingSoon v-if="opt.id === 'quick'" />
                 <component :is="opt.icon" :size="36" class="priority-icon" :style="{ color: opt.color }" />
                 <div class="priority-label">{{ opt.label }}</div>
                 <div class="priority-stats">
@@ -59,8 +59,8 @@
                       <div class="preview-avatar" :style="{ background: cardPreviews[opt.id]!.avatarColor }">{{ cardPreviews[opt.id]!.name[0] }}</div>
                       <span class="preview-name">{{ cardPreviews[opt.id]!.name }}</span>
                     </div>
-                    <div class="preview-subject">{{ cardPreviews[opt.id]!.subject }}</div>
-                    <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0]?.text }}</div>
+                    <div class="preview-subject">{{ cardPreviews[opt.id]!.aiTitle ?? cardPreviews[opt.id]!.subject }}</div>
+                    <div class="preview-summary">{{ cardPreviews[opt.id]!.aiSummary ?? cardPreviews[opt.id]!.messages[0]?.text }}</div>
                   </div>
                 </div>
               </button>
@@ -110,15 +110,29 @@
                 </div>
                 <div class="qcard-meta">
                   <div class="qcard-name">{{ thread.name }}
-                    <span class="qcard-company">· {{ thread.company }}</span>
+                    <span v-if="thread.company" class="qcard-company">· {{ thread.company }}</span>
                   </div>
-                  <div class="qcard-subject">{{ thread.subject }}</div>
+                  <div class="qcard-title">{{ thread.aiTitle ?? thread.subject }}</div>
                 </div>
+                <div
+                  v-if="thread.aiTemperature"
+                  class="qcard-temp"
+                  :style="{ background: tempColor(thread.aiTemperature) }"
+                  :title="`Temperature: ${thread.aiTemperature}/10`"
+                />
               </div>
               <div class="qcard-footer">
                 <span class="qcard-wait">
                   <Clock :size="11" /> {{ thread.wait }}
                 </span>
+                <div
+                  v-if="thread.aiSummary"
+                  class="qcard-info"
+                  @click.stop
+                >
+                  <Info :size="11" />
+                  <div class="qcard-info-tooltip">{{ thread.aiSummary }}</div>
+                </div>
               </div>
             </button>
           </template>
@@ -130,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
+import { Clock, Flame, Hourglass, Info, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { computed, ref, watch } from "vue"
 import { useRouter } from "vue-router"
@@ -172,21 +186,20 @@ watch(hoveredPriority, (val) => { if (val !== null) lastHoveredPriority.value = 
 // Show the sorted queue for the hovered strategy; empty for "coming soon" ones.
 const displayQueue = computed(() => {
   const s = hoveredPriority.value
-  if (!s || s === "urgent" || s === "quick") return []
+  if (!s || s === "quick") return []
   const all = [...threads.value]
-  if (s === "waiting") all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
+  if (s === "urgent") all.sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
+  else if (s === "waiting") all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   else if (s === "queue") all.sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   return all
 })
 
-const isQueueComingSoon = computed(() =>
-  hoveredPriority.value === "urgent" || hoveredPriority.value === "quick"
-)
+const isQueueComingSoon = computed(() => hoveredPriority.value === "quick")
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
-    urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
+    urgent: { stat: `${threads.value.filter((t) => (t.aiTemperature ?? 0) >= 7).length} hot tickets`, detail: "" },
     waiting: { stat: hudLongestWait.value, detail: "" },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
     queue: { stat: `${threads.value.length} waiting`, detail: "" },
@@ -196,13 +209,13 @@ const cardStats = computed<Record<string, { stat: string; detail: string }>>(() 
 const cardPreviews = computed<Record<string, Ticket | null>>(() => {
   const all = [...threads.value]
 
-  const byWait = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  const byUrgent = [...all].sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
   const byWaiting = [...all].sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   const byQueue = [...all].sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   const byQuick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
 
   return {
-    urgent: byWait[0] ?? null,
+    urgent: byUrgent[0] ?? null,
     waiting: byWaiting[0] ?? null,
     quick: byQuick[0] ?? null,
     queue: byQueue[0] ?? null,
@@ -218,20 +231,27 @@ const recommendedStrategy = computed(() => {
 // ── Actions ──────────────────────────────────────────────
 
 function choosePriority(opt: typeof priorityOptions[number]) {
-  if (opt.id === "urgent" || opt.id === "quick") return
+  if (opt.id === "quick") return
   const first = cardPreviews.value[opt.id]
   if (!first) return
-  const queueParam = opt.id === "waiting" ? "longest" : "work"
+  const queueParam = opt.id === "waiting" ? "longest" : opt.id === "urgent" ? "urgent" : "work"
   router.push({ path: `/ticket/${first.id}`, query: { queue: queueParam } })
+}
+
+function tempColor(n: number): string {
+  if (n <= 3) return "#34d399"
+  if (n <= 6) return "#fbbf24"
+  if (n <= 8) return "#f97316"
+  return "#ef4444"
 }
 
 function navigateFromHoverQueue(ticketId: string) {
   const strategy = lastHoveredPriority.value
-  if (!strategy || strategy === "urgent" || strategy === "quick") {
+  if (!strategy || strategy === "quick") {
     router.push(`/ticket/${ticketId}`)
     return
   }
-  const queueParam = strategy === "waiting" ? "longest" : "work"
+  const queueParam = strategy === "waiting" ? "longest" : strategy === "urgent" ? "urgent" : "work"
   router.push({ path: `/ticket/${ticketId}`, query: { queue: queueParam } })
 }
 </script>
@@ -440,16 +460,19 @@ function navigateFromHoverQueue(ticketId: string) {
 }
 
 .preview-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.8);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-subject {
   font-size: 15px;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.65);
+  color: #e2e8f0;
   line-height: 1.35;
 }
 
@@ -589,23 +612,42 @@ function navigateFromHoverQueue(ticketId: string) {
 }
 
 .qcard-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qcard-company {
   font-weight: 400;
-  color: rgba(148, 163, 184, 0.5);
+  color: rgba(148, 163, 184, 0.4);
 }
 
-.qcard-subject {
+.qcard-title {
   font-size: 14px;
-  color: rgba(148, 163, 184, 0.6);
+  font-weight: 500;
+  color: #e2e8f0;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.qcard-temp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: flex-start;
+  margin-top: 4px;
+  transition: transform 0.15s;
+}
+
+.queue-card:hover .qcard-temp {
+  transform: scale(1.3);
 }
 
 .qcard-footer {
@@ -620,6 +662,46 @@ function navigateFromHoverQueue(ticketId: string) {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
+}
+
+.qcard-info {
+  display: flex;
+  align-items: center;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: default;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.qcard-info:hover,
+.qcard-info:focus-within {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.qcard-info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: 220px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.qcard-info:hover .qcard-info-tooltip,
+.qcard-info:focus-within .qcard-info-tooltip {
+  opacity: 1;
 }
 
 .queue-coming-soon {

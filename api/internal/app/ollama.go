@@ -25,8 +25,9 @@ type chatMessage struct {
 }
 
 type chatRequest struct {
-	Model    string        `json:"model"`
+	Format   string        `json:"format,omitempty"`
 	Messages []chatMessage `json:"messages"`
+	Model    string        `json:"model"`
 	Stream   bool          `json:"stream"`
 }
 
@@ -67,13 +68,15 @@ func (c *ollamaClient) pullModel(ctx context.Context) error {
 
 // chat sends a single-turn prompt to the model and returns the assistant reply.
 // Uses a 5-minute timeout to accommodate slow local inference.
-func (c *ollamaClient) chat(ctx context.Context, prompt string) (string, error) {
+// Pass format="json" to instruct Ollama to return valid JSON.
+func (c *ollamaClient) chat(ctx context.Context, prompt, format string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	body, err := json.Marshal(chatRequest{
-		Model:    c.model,
+		Format:   format,
 		Messages: []chatMessage{{Role: "user", Content: prompt}},
+		Model:    c.model,
 		Stream:   false,
 	})
 	if err != nil {

@@ -235,6 +235,9 @@ const stages = computed(() => {
           company: t.company,
           subject: t.subject,
           avatarColor: t.avatarColor,
+          aiTitle: t.aiTitle,
+          aiSummary: t.aiSummary,
+          aiTemperature: t.aiTemperature,
         })),
       }
     })

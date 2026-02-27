@@ -69,14 +69,28 @@
                 <div class="qcard-name">{{ item.name }}
                   <span v-if="item.company" class="qcard-company">· {{ item.company }}</span>
                 </div>
-                <div class="qcard-subject">{{ item.subject }}</div>
+                <div class="qcard-title">{{ item.aiTitle ?? item.subject }}</div>
               </div>
+              <div
+                v-if="item.aiTemperature"
+                class="qcard-temp"
+                :style="{ background: tempColor(item.aiTemperature) }"
+                :title="`Temperature: ${item.aiTemperature}/10`"
+              />
             </div>
             <div class="qcard-footer">
               <span class="qcard-wait">
                 <Clock :size="11" /> {{ item.wait }}
               </span>
-              <ChevronRight v-if="item.id === ticketId" :size="14" class="qcard-active-arrow" />
+              <div
+                v-if="item.aiSummary"
+                class="qcard-info"
+                @click.stop
+              >
+                <Info :size="11" />
+                <div class="qcard-info-tooltip">{{ item.aiSummary }}</div>
+              </div>
+              <ChevronRight v-else-if="item.id === ticketId" :size="14" class="qcard-active-arrow" />
             </div>
           </button>
         </div>
@@ -122,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, Clock, Hourglass, ListOrdered, X } from "lucide-vue-next"
+import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, Info, ListOrdered, X } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { type Component, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
@@ -157,6 +171,7 @@ const context = computed((): Context | null => {
   const q = route.query
   if (q.queue === "longest") return { label: "Longest waiting", color: "#fbbf24", icon: Hourglass }
   if (q.queue === "work") return { label: "Work the queue", color: "#818cf8", icon: ListOrdered }
+  if (q.queue === "urgent") return { label: "Urgent first", color: "#f87171", icon: Flame }
   if (q.board && q.stage) {
     const board = boards.value.find((b) => b.id === q.board)
     const stage = board?.stages.find((s) => s.id === q.stage)
@@ -175,6 +190,9 @@ const queue = computed(() => {
   if (q.queue === "work") {
     return [...openTickets.value].sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   }
+  if (q.queue === "urgent") {
+    return [...openTickets.value].sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
+  }
   if (q.board && q.stage) {
     const board = boards.value.find((b) => b.id === q.board)
     if (!board) return []
@@ -186,6 +204,13 @@ const queue = computed(() => {
   }
   return []
 })
+
+function tempColor(n: number): string {
+  if (n <= 3) return "#34d399"
+  if (n <= 6) return "#fbbf24"
+  if (n <= 8) return "#f97316"
+  return "#ef4444"
+}
 
 // ── Queue navigation ──────────────────────────────────────
 
@@ -549,23 +574,42 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
 }
 
 .qcard-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .qcard-company {
   font-weight: 400;
-  color: rgba(148, 163, 184, 0.5);
+  color: rgba(148, 163, 184, 0.4);
 }
 
-.qcard-subject {
+.qcard-title {
   font-size: 14px;
-  color: rgba(148, 163, 184, 0.6);
+  font-weight: 500;
+  color: #e2e8f0;
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.qcard-temp {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-left: auto;
+  align-self: flex-start;
+  margin-top: 4px;
+  transition: transform 0.15s;
+}
+
+.queue-card:hover .qcard-temp {
+  transform: scale(1.3);
 }
 
 .qcard-footer {
@@ -580,6 +624,46 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeydown))
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
+}
+
+.qcard-info {
+  display: flex;
+  align-items: center;
+  color: rgba(148, 163, 184, 0.3);
+  cursor: default;
+  position: relative;
+  transition: color 0.15s;
+}
+
+.qcard-info:hover,
+.qcard-info:focus-within {
+  color: rgba(148, 163, 184, 0.7);
+}
+
+.qcard-info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: -4px;
+  width: 220px;
+  background: rgba(15, 23, 42, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94a3b8;
+  white-space: normal;
+  text-align: left;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  z-index: 50;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.qcard-info:hover .qcard-info-tooltip,
+.qcard-info:focus-within .qcard-info-tooltip {
+  opacity: 1;
 }
 
 .qcard-active-arrow {
