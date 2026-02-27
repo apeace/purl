@@ -341,18 +341,17 @@ func handleTicketUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhoo
 	var ticketID string
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id,
-		                     zendesk_status, zendesk_ticket_id, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7, $8, $9)
+		                     zendesk_status, zendesk_ticket_id, received_at)
+		VALUES ($1, $2, $3, $4, $5, $6::zendesk_status_category, $7, $8)
 		ON CONFLICT (org_id, zendesk_ticket_id) DO UPDATE SET
 			title          = EXCLUDED.title,
 			description    = EXCLUDED.description,
 			reporter_id    = EXCLUDED.reporter_id,
 			assignee_id    = EXCLUDED.assignee_id,
-			zendesk_status = EXCLUDED.zendesk_status,
-			updated_at     = EXCLUDED.updated_at
+			zendesk_status = EXCLUDED.zendesk_status
 		RETURNING id`,
 		d.Subject, d.Description, reporterID, assigneeID, orgID,
-		newStatus, d.ID, d.CreatedAt, d.UpdatedAt,
+		newStatus, d.ID, d.CreatedAt,
 	).Scan(&ticketID)
 	if err != nil {
 		return fmt.Errorf("upsert ticket: %w", err)
@@ -538,10 +537,10 @@ func insertCommentForTicket(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID, 
 				INSERT INTO ticket_comments
 					(ticket_id, customer_author_id, agent_author_id, role, body, html_body,
 					 channel, zendesk_comment_id, zendesk_sub_index, author_display_name,
-					 created_at, updated_at)
+					 received_at)
 				VALUES ($1, $2, $3, $4::comment_role, $5, NULL,
 				        'chat'::comment_channel, $6, $7, $8,
-				        $9, $9)
+				        $9)
 				ON CONFLICT (ticket_id, zendesk_comment_id, zendesk_sub_index) DO NOTHING`,
 				ticketID, lineCustomerAuthorID, lineAgentAuthorID, line.Role,
 				line.Text, d.ID, i, line.Speaker, d.CreatedAt,
@@ -580,10 +579,10 @@ func insertCommentForTicket(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID, 
 
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO ticket_comments
-				(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, zendesk_sub_index, created_at, updated_at,
+				(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, zendesk_sub_index, received_at,
 				 call_id, recording_url, transcription_text, transcription_status, call_duration,
 				 call_from, call_to, answered_by_name, call_location, call_started_at)
-			VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, 0, $9, $9,
+			VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, 0, $9,
 			        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 			ON CONFLICT (ticket_id, zendesk_comment_id, zendesk_sub_index) DO NOTHING`,
 			ticketID, customerAuthorID, agentAuthorID, role,
