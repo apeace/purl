@@ -130,6 +130,7 @@
           <button
             v-for="item in displayQueue"
             :key="item.id"
+            :ref="el => setQueueCardRef(el, item.id)"
             class="queue-card"
             :class="{ 'queue-card--active': item.id === selectedTicketId }"
             @click="selectedTicketId = item.id"
@@ -493,6 +494,19 @@ function goPrev() {
 function goNext() {
   if (canGoNext.value) selectedTicketId.value = stageQueue.value[queueIndex.value + 1].id
 }
+
+// ── Queue card scroll-into-view ───────────────────────────
+
+const queueCardRefs = ref<Record<string, HTMLElement>>({})
+
+function setQueueCardRef(el: unknown, id: string) {
+  if (el instanceof HTMLElement) queueCardRefs.value[id] = el
+}
+
+watch(selectedTicketId, (id) => {
+  if (!id) return
+  nextTick(() => queueCardRefs.value[id]?.scrollIntoView({ block: "nearest" }))
+})
 
 function handleResolve() {
   const idx = queueIndex.value

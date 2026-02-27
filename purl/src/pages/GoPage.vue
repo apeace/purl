@@ -123,6 +123,7 @@
             <button
               v-for="thread in displayQueue"
               :key="thread.id"
+              :ref="el => setQueueCardRef(el, thread.id)"
               class="queue-card"
               :class="{ 'queue-card--active': thread.id === activeId }"
               @click="activeId = thread.id"
@@ -156,7 +157,7 @@
 <script setup lang="ts">
 import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, ListOrdered, Sparkles, Zap } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
@@ -292,6 +293,19 @@ watch(activeId, (val) => {
   if (val == null) {
     chosenPriority.value = null
   }
+})
+
+// ── Queue card scroll-into-view ───────────────────────────
+
+const queueCardRefs = ref<Record<string, HTMLElement>>({})
+
+function setQueueCardRef(el: unknown, id: string) {
+  if (el instanceof HTMLElement) queueCardRefs.value[id] = el
+}
+
+watch(activeId, (id) => {
+  if (!id) return
+  nextTick(() => queueCardRefs.value[id]?.scrollIntoView({ block: "nearest" }))
 })
 </script>
 
