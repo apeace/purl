@@ -136,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { ChevronLeft, ChevronRight, Clock, Hourglass, Info, ListOrdered, X } from "lucide-vue-next"
+import { ChevronLeft, ChevronRight, Clock, Flame, Hourglass, Info, ListOrdered, X } from "lucide-vue-next"
 import { storeToRefs } from "pinia"
 import { type Component, computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
@@ -171,6 +171,7 @@ const context = computed((): Context | null => {
   const q = route.query
   if (q.queue === "longest") return { label: "Longest waiting", color: "#fbbf24", icon: Hourglass }
   if (q.queue === "work") return { label: "Work the queue", color: "#818cf8", icon: ListOrdered }
+  if (q.queue === "urgent") return { label: "Urgent first", color: "#f87171", icon: Flame }
   if (q.board && q.stage) {
     const board = boards.value.find((b) => b.id === q.board)
     const stage = board?.stages.find((s) => s.id === q.stage)
@@ -188,6 +189,9 @@ const queue = computed(() => {
   }
   if (q.queue === "work") {
     return [...openTickets.value].sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
+  }
+  if (q.queue === "urgent") {
+    return [...openTickets.value].sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
   }
   if (q.board && q.stage) {
     const board = boards.value.find((b) => b.id === q.board)

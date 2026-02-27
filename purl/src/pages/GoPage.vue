@@ -45,7 +45,7 @@
                 <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
                   <Sparkles :size="10" /> Recommended
                 </div>
-                <ComingSoon v-if="opt.id === 'urgent' || opt.id === 'quick'" />
+                <ComingSoon v-if="opt.id === 'quick'" />
                 <component :is="opt.icon" :size="36" class="priority-icon" :style="{ color: opt.color }" />
                 <div class="priority-label">{{ opt.label }}</div>
                 <div class="priority-stats">
@@ -186,21 +186,20 @@ watch(hoveredPriority, (val) => { if (val !== null) lastHoveredPriority.value = 
 // Show the sorted queue for the hovered strategy; empty for "coming soon" ones.
 const displayQueue = computed(() => {
   const s = hoveredPriority.value
-  if (!s || s === "urgent" || s === "quick") return []
+  if (!s || s === "quick") return []
   const all = [...threads.value]
-  if (s === "waiting") all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
+  if (s === "urgent") all.sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
+  else if (s === "waiting") all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   else if (s === "queue") all.sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   return all
 })
 
-const isQueueComingSoon = computed(() =>
-  hoveredPriority.value === "urgent" || hoveredPriority.value === "quick"
-)
+const isQueueComingSoon = computed(() => hoveredPriority.value === "quick")
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
-    urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
+    urgent: { stat: `${threads.value.filter((t) => (t.aiTemperature ?? 0) >= 7).length} hot tickets`, detail: "" },
     waiting: { stat: hudLongestWait.value, detail: "" },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
     queue: { stat: `${threads.value.length} waiting`, detail: "" },
@@ -210,13 +209,13 @@ const cardStats = computed<Record<string, { stat: string; detail: string }>>(() 
 const cardPreviews = computed<Record<string, Ticket | null>>(() => {
   const all = [...threads.value]
 
-  const byWait = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  const byUrgent = [...all].sort((a, b) => (b.aiTemperature ?? 0) - (a.aiTemperature ?? 0))
   const byWaiting = [...all].sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   const byQueue = [...all].sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
   const byQuick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
 
   return {
-    urgent: byWait[0] ?? null,
+    urgent: byUrgent[0] ?? null,
     waiting: byWaiting[0] ?? null,
     quick: byQuick[0] ?? null,
     queue: byQueue[0] ?? null,
@@ -232,10 +231,10 @@ const recommendedStrategy = computed(() => {
 // ── Actions ──────────────────────────────────────────────
 
 function choosePriority(opt: typeof priorityOptions[number]) {
-  if (opt.id === "urgent" || opt.id === "quick") return
+  if (opt.id === "quick") return
   const first = cardPreviews.value[opt.id]
   if (!first) return
-  const queueParam = opt.id === "waiting" ? "longest" : "work"
+  const queueParam = opt.id === "waiting" ? "longest" : opt.id === "urgent" ? "urgent" : "work"
   router.push({ path: `/ticket/${first.id}`, query: { queue: queueParam } })
 }
 
@@ -248,11 +247,11 @@ function tempColor(n: number): string {
 
 function navigateFromHoverQueue(ticketId: string) {
   const strategy = lastHoveredPriority.value
-  if (!strategy || strategy === "urgent" || strategy === "quick") {
+  if (!strategy || strategy === "quick") {
     router.push(`/ticket/${ticketId}`)
     return
   }
-  const queueParam = strategy === "waiting" ? "longest" : "work"
+  const queueParam = strategy === "waiting" ? "longest" : strategy === "urgent" ? "urgent" : "work"
   router.push({ path: `/ticket/${ticketId}`, query: { queue: queueParam } })
 }
 </script>
