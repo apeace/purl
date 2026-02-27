@@ -75,15 +75,15 @@ func (d *zendeskVoiceData) callTo() *string {
 }
 
 type ZendeskComment struct {
-	ID        int64              `json:"id"`
-	Type      string             `json:"type"`
-	Body      string             `json:"body"`
-	HtmlBody  string             `json:"html_body"`
-	AuthorID  int64              `json:"author_id"`
-	Public    bool               `json:"public"`
-	Via       ZendeskCommentVia  `json:"via"`
-	CreatedAt time.Time          `json:"created_at"`
-	Data      *zendeskVoiceData  `json:"data"`
+	ID        int64             `json:"id"`
+	Type      string            `json:"type"`
+	Body      string            `json:"body"`
+	HtmlBody  string            `json:"html_body"`
+	AuthorID  int64             `json:"author_id"`
+	Public    bool              `json:"public"`
+	Via       ZendeskCommentVia `json:"via"`
+	CreatedAt time.Time         `json:"created_at"`
+	Data      *zendeskVoiceData `json:"data"`
 }
 
 type ZendeskCommentsResponse struct {
@@ -336,6 +336,9 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 
 	// Step 6: Insert tickets with correct timestamps
 	ticketsByZendeskID := make(map[int64]string) // zendeskTicketID -> purl ticket UUID
+	// Maps zendeskTicketID -> purl customer UUID for the ticket's requester.
+	// Used to attribute customer-role chat transcript lines correctly.
+	ticketReporterByZendeskID := make(map[int64]string)
 
 	for _, ticket := range ticketsResp.Tickets {
 		reporterID, ok := customersByZendeskID[ticket.RequesterID]
@@ -370,6 +373,7 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 			return fmt.Errorf("insert ticket %d: %w", ticket.ID, err)
 		}
 		ticketsByZendeskID[ticket.ID] = ticketID
+		ticketReporterByZendeskID[ticket.ID] = reporterID
 	}
 	log.Printf("inserted %d tickets", len(ticketsByZendeskID))
 
@@ -409,46 +413,98 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 				continue
 			}
 
-			// Extract voice data if this is a VoiceComment
-			var callID *int64
-			var recordingURL, transcriptionText, transcriptionStatus *string
-			var callDuration *int
-			var callFrom, callTo, answeredByName, callLocation *string
-			var callStartedAt *time.Time
-			if c.Data != nil {
-				callID = c.Data.CallID
-				recordingURL = c.Data.RecordingURL
-				transcriptionText = c.Data.TranscriptionText
-				transcriptionStatus = c.Data.TranscriptionStatus
-				callDuration = c.Data.CallDuration
-				callFrom = c.Data.callFrom()
-				callTo = c.Data.callTo()
-				callLocation = c.Data.Location
-				callStartedAt = c.Data.StartedAt
-				// Resolve agent name from answered_by_id if available
-				answeredByName = c.Data.AnsweredByName
-				if answeredByName == nil && c.Data.AnsweredByID != nil {
-					if name, ok := agentNamesByZendeskID[*c.Data.AnsweredByID]; ok {
-						answeredByName = &name
-					}
+			// Zendesk uses via.channel="chat_transcript" for all web chat messages.
+			// Split these into one row per line; fall back to single-row insert if parsing yields nothing.
+			chatLines := []webChatLine{}
+			if c.Via.Channel == "chat_transcript" {
+				chatLines = parseWebChatBody(c.Body)
+				if len(chatLines) == 0 {
+					log.Printf("warn: comment %d (chat_transcript) produced no parsed lines — inserting as regular comment", c.ID)
 				}
 			}
 
-			_, err := db.Exec(
-				`INSERT INTO ticket_comments
-					(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
-					 call_id, recording_url, transcription_text, transcription_status, call_duration,
-					 call_from, call_to, answered_by_name, call_location, call_started_at)
-				 VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
-				         $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
-				ticketID, customerAuthorID, agentAuthorID, role, c.Body, nilIfEmpty(c.HtmlBody), mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
-				callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
-				callFrom, callTo, answeredByName, callLocation, callStartedAt,
-			)
-			if err != nil {
-				return fmt.Errorf("insert comment %d: %w", c.ID, err)
+			if len(chatLines) > 0 {
+				// Ensure system agent is resolved for agent-role lines.
+				if systemAgentID == "" {
+					id, err := resolveSystemAgent(context.Background(), db, orgID)
+					if err != nil {
+						return fmt.Errorf("resolve system agent: %w", err)
+					}
+					systemAgentID = id
+				}
+
+				// Customer-role lines are attributed to the ticket's reporter.
+				// All chat_transcript comments come from author_id=-1 so customerAuthorID
+				// is always nil; fall back to the ticket's requester.
+				chatCustomerID := customerAuthorID
+				if chatCustomerID == nil {
+					if rid, ok := ticketReporterByZendeskID[zendeskTicketID]; ok {
+						chatCustomerID = &rid
+					}
+				}
+
+				for i, line := range chatLines {
+					var lineCustomerAuthorID *string
+					var lineAgentAuthorID *string
+					if line.Role == "customer" {
+						lineCustomerAuthorID = chatCustomerID
+					} else {
+						lineAgentAuthorID = &systemAgentID
+					}
+					if _, err := db.Exec(`
+						INSERT INTO ticket_comments
+							(ticket_id, customer_author_id, agent_author_id, role, body, html_body,
+							 channel, zendesk_comment_id, zendesk_sub_index, author_display_name,
+							 created_at, updated_at)
+						VALUES ($1, $2, $3, $4::comment_role, $5, NULL,
+						        'chat'::comment_channel, $6, $7, $8, $9, $9)`,
+						ticketID, lineCustomerAuthorID, lineAgentAuthorID, line.Role,
+						line.Text, c.ID, i, line.Speaker, c.CreatedAt,
+					); err != nil {
+						return fmt.Errorf("insert web chat line %d for comment %d: %w", i, c.ID, err)
+					}
+					commentsInserted++
+				}
+			} else {
+				// Regular comment — extract voice data and insert a single row.
+				var callID *int64
+				var recordingURL, transcriptionText, transcriptionStatus *string
+				var callDuration *int
+				var callFrom, callTo, answeredByName, callLocation *string
+				var callStartedAt *time.Time
+				if c.Data != nil {
+					callID = c.Data.CallID
+					recordingURL = c.Data.RecordingURL
+					transcriptionText = c.Data.TranscriptionText
+					transcriptionStatus = c.Data.TranscriptionStatus
+					callDuration = c.Data.CallDuration
+					callFrom = c.Data.callFrom()
+					callTo = c.Data.callTo()
+					callLocation = c.Data.Location
+					callStartedAt = c.Data.StartedAt
+					answeredByName = c.Data.AnsweredByName
+					if answeredByName == nil && c.Data.AnsweredByID != nil {
+						if name, ok := agentNamesByZendeskID[*c.Data.AnsweredByID]; ok {
+							answeredByName = &name
+						}
+					}
+				}
+
+				if _, err := db.Exec(`
+					INSERT INTO ticket_comments
+						(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
+						 call_id, recording_url, transcription_text, transcription_status, call_duration,
+						 call_from, call_to, answered_by_name, call_location, call_started_at)
+					VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
+					        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+					ticketID, customerAuthorID, agentAuthorID, role, c.Body, nilIfEmpty(c.HtmlBody), mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
+					callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
+					callFrom, callTo, answeredByName, callLocation, callStartedAt,
+				); err != nil {
+					return fmt.Errorf("insert comment %d: %w", c.ID, err)
+				}
+				commentsInserted++
 			}
-			commentsInserted++
 		}
 	}
 	log.Printf("inserted %d comments", commentsInserted)

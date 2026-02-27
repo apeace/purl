@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -269,7 +270,7 @@ func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType strin
 		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
 			return fmt.Errorf("unmarshal comment detail: %w", err)
 		}
-		return handleCommentUpdated(ctx, db, orgID, &d)
+		return handleCommentUpdated(ctx, db, orgID, &d, limiter)
 
 	case "zen:event-type:user.created", "zen:event-type:user.updated":
 		var d webhookUserDetail
@@ -390,6 +391,220 @@ func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskT
 	return err
 }
 
+// ── Web chat parsing ──────────────────────────────────────────────────────────
+
+type webChatLine struct {
+	Speaker string
+	Role    string // "customer" or "agent"
+	Time    string
+	Text    string
+}
+
+var (
+	// Matches individual web chat transcript lines: (HH:MM:SS) Speaker: text
+	reChatLine = regexp.MustCompile(`^\((\d{1,2}:\d{2}:\d{2})\)\s+(.+?):\s*(.*)$`)
+)
+
+// parseWebChatBody splits a web chat transcript body into individual lines.
+// Lines start with "(HH:MM:SS) Speaker: text"; continuation lines (no timestamp)
+// are accumulated into the preceding message's text.
+func parseWebChatBody(body string) []webChatLine {
+	var lines []webChatLine
+	var current *webChatLine
+
+	for _, rawLine := range strings.Split(body, "\n") {
+		trimmed := strings.TrimSpace(rawLine)
+		m := reChatLine.FindStringSubmatch(trimmed)
+		if m != nil {
+			// Save the previous message before starting a new one.
+			if current != nil {
+				lines = append(lines, *current)
+			}
+			speaker := strings.TrimSpace(m[2])
+			lower := strings.ToLower(speaker)
+			role := "agent"
+			if strings.HasPrefix(lower, "web user") {
+				role = "customer"
+			}
+			current = &webChatLine{
+				Speaker: speaker,
+				Role:    role,
+				Time:    m[1],
+				Text:    strings.TrimSpace(m[3]),
+			}
+		} else if current != nil && trimmed != "" {
+			// Non-empty continuation line — append to the current message.
+			current.Text += "\n" + trimmed
+		}
+	}
+
+	// Flush the final message.
+	if current != nil && current.Text != "" {
+		lines = append(lines, *current)
+	}
+
+	return lines
+}
+
+// insertCommentForTicket resolves the comment author and inserts the appropriate
+// ticket_comments row(s) for d within tx. Web-chat bodies are split into one row
+// per transcript line; all other comments produce a single row. Also marks the
+// ticket as AI-summary-stale.
+func insertCommentForTicket(ctx context.Context, db *sql.DB, tx *sql.Tx, orgID, ticketID string, d *webhookCommentDetail, limiter *ratelimit.Limiter) error {
+	var customerAuthorID *string
+	var agentAuthorID *string
+	var role string
+
+	if d.AuthorID <= 0 {
+		// author_id <= 0 is the Zendesk system/automation user.
+		id, err := resolveSystemAgent(ctx, db, orgID)
+		if err != nil {
+			return fmt.Errorf("resolve system agent: %w", err)
+		}
+		agentAuthorID = &id
+		role = "agent"
+	} else {
+		var customerID string
+		if err := tx.QueryRowContext(ctx,
+			`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
+			orgID, d.AuthorID,
+		).Scan(&customerID); err == nil {
+			customerAuthorID = &customerID
+			role = "customer"
+		} else {
+			var agentID string
+			if err := tx.QueryRowContext(ctx,
+				`SELECT id FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
+				orgID, d.AuthorID,
+			).Scan(&agentID); err == nil {
+				agentAuthorID = &agentID
+				role = "agent"
+			} else {
+				fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, d.AuthorID, limiter)
+				if fetchErr != nil || fetched == nil {
+					return fmt.Errorf("author %d not found (may arrive in a later event)", d.AuthorID)
+				}
+				if fetched.Role == "end-user" {
+					cid, upsertErr := upsertCustomer(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
+					if upsertErr != nil {
+						return fmt.Errorf("upsert author customer: %w", upsertErr)
+					}
+					customerAuthorID = &cid
+					role = "customer"
+				} else {
+					aid, upsertErr := upsertAgent(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
+					if upsertErr != nil {
+						return fmt.Errorf("upsert author agent: %w", upsertErr)
+					}
+					agentAuthorID = &aid
+					role = "agent"
+				}
+			}
+		}
+	}
+
+	// Zendesk uses via.channel="chat_transcript" for all web chat messages.
+	if d.Via.Channel == "chat_transcript" {
+		chatLines := parseWebChatBody(d.Body)
+		systemAgentID, err := resolveSystemAgent(ctx, db, orgID)
+		if err != nil {
+			return fmt.Errorf("resolve system agent: %w", err)
+		}
+
+		// Customer-role lines are attributed to the ticket's reporter.
+		// All chat_transcript comments come from author_id=-1 so customerAuthorID
+		// is always nil; we resolve the reporter directly from the tickets row.
+		var chatCustomerID *string
+		if customerAuthorID != nil {
+			chatCustomerID = customerAuthorID
+		} else {
+			var rid string
+			if err := tx.QueryRowContext(ctx,
+				`SELECT reporter_id FROM tickets WHERE id = $1`, ticketID,
+			).Scan(&rid); err == nil {
+				chatCustomerID = &rid
+			}
+		}
+
+		for i, line := range chatLines {
+			var lineCustomerAuthorID *string
+			var lineAgentAuthorID *string
+			if line.Role == "customer" {
+				lineCustomerAuthorID = chatCustomerID
+			} else {
+				lineAgentAuthorID = &systemAgentID
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO ticket_comments
+					(ticket_id, customer_author_id, agent_author_id, role, body, html_body,
+					 channel, zendesk_comment_id, zendesk_sub_index, author_display_name,
+					 created_at, updated_at)
+				VALUES ($1, $2, $3, $4::comment_role, $5, NULL,
+				        'chat'::comment_channel, $6, $7, $8,
+				        $9, $9)
+				ON CONFLICT (ticket_id, zendesk_comment_id, zendesk_sub_index) DO NOTHING`,
+				ticketID, lineCustomerAuthorID, lineAgentAuthorID, line.Role,
+				line.Text, d.ID, i, line.Speaker, d.CreatedAt,
+			); err != nil {
+				return fmt.Errorf("insert web chat line %d: %w", i, err)
+			}
+		}
+	} else {
+		// Regular comment — extract any voice data and insert a single row.
+		var callID *int64
+		var recordingURL, transcriptionText, transcriptionStatus *string
+		var callDuration *int
+		var callFrom, callTo, answeredByName, callLocation *string
+		var callStartedAt *time.Time
+		if d.Data != nil {
+			callID = d.Data.CallID
+			recordingURL = d.Data.RecordingURL
+			transcriptionText = d.Data.TranscriptionText
+			transcriptionStatus = d.Data.TranscriptionStatus
+			callDuration = d.Data.CallDuration
+			callFrom = d.Data.callFrom()
+			callTo = d.Data.callTo()
+			callLocation = d.Data.Location
+			callStartedAt = d.Data.StartedAt
+			answeredByName = d.Data.AnsweredByName
+			if answeredByName == nil && d.Data.AnsweredByID != nil {
+				var name string
+				if err := tx.QueryRowContext(ctx,
+					`SELECT name FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
+					orgID, *d.Data.AnsweredByID,
+				).Scan(&name); err == nil {
+					answeredByName = &name
+				}
+			}
+		}
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO ticket_comments
+				(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, zendesk_sub_index, created_at, updated_at,
+				 call_id, recording_url, transcription_text, transcription_status, call_duration,
+				 call_from, call_to, answered_by_name, call_location, call_started_at)
+			VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, 0, $9, $9,
+			        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+			ON CONFLICT (ticket_id, zendesk_comment_id, zendesk_sub_index) DO NOTHING`,
+			ticketID, customerAuthorID, agentAuthorID, role,
+			d.Body, nilIfEmpty(d.HtmlBody), mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
+			callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
+			callFrom, callTo, answeredByName, callLocation, callStartedAt,
+		); err != nil {
+			return fmt.Errorf("upsert comment: %w", err)
+		}
+	}
+
+	// Reset error count so tickets with new comments get a fresh AI summary attempt.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE tickets SET ai_summary_stale = TRUE, ai_summary_error_count = 0 WHERE id = $1`, ticketID,
+	); err != nil {
+		return fmt.Errorf("mark ticket stale: %w", err)
+	}
+
+	return nil
+}
+
 func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail, limiter *ratelimit.Limiter) error {
 	// Resolve the ticket, fetching from Zendesk if not yet in the DB.
 	var ticketID string
@@ -423,129 +638,44 @@ func handleCommentCreated(ctx context.Context, db *sql.DB, orgID string, d *webh
 	}
 	defer tx.Rollback()
 
-	// Resolve the author — may be a customer, agent, or Zendesk system user.
-	var customerAuthorID *string
-	var agentAuthorID *string
-	var role string
-
-	if d.AuthorID <= 0 {
-		// author_id <= 0 is the Zendesk system/automation user, generated by
-		// triggers, bots, and automations. Upsert using db directly since it's
-		// idempotent and doesn't need to roll back with the comment insert.
-		id, err := resolveSystemAgent(ctx, db, orgID)
-		if err != nil {
-			return fmt.Errorf("resolve system agent: %w", err)
-		}
-		agentAuthorID = &id
-		role = "agent"
-	} else {
-		var customerID string
-		if err := tx.QueryRowContext(ctx,
-			`SELECT id FROM customers WHERE org_id = $1 AND zendesk_user_id = $2`,
-			orgID, d.AuthorID,
-		).Scan(&customerID); err == nil {
-			customerAuthorID = &customerID
-			role = "customer"
-		} else {
-			var agentID string
-			if err := tx.QueryRowContext(ctx,
-				`SELECT id FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
-				orgID, d.AuthorID,
-			).Scan(&agentID); err == nil {
-				agentAuthorID = &agentID
-				role = "agent"
-			} else {
-				// Author unknown — try fetching from Zendesk before giving up.
-				fetched, fetchErr := fetchZendeskUser(ctx, db, orgID, d.AuthorID, limiter)
-				if fetchErr != nil || fetched == nil {
-					// Return an error so this event is retried after the user arrives.
-					return fmt.Errorf("author %d not found (may arrive in a later event)", d.AuthorID)
-				}
-				if fetched.Role == "end-user" {
-					cid, upsertErr := upsertCustomer(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
-					if upsertErr != nil {
-						return fmt.Errorf("upsert author customer: %w", upsertErr)
-					}
-					customerAuthorID = &cid
-					role = "customer"
-				} else {
-					aid, upsertErr := upsertAgent(ctx, tx, orgID, fetched.ID, fetched.Name, fetched.Email)
-					if upsertErr != nil {
-						return fmt.Errorf("upsert author agent: %w", upsertErr)
-					}
-					agentAuthorID = &aid
-					role = "agent"
-				}
-			}
-		}
-	}
-
-	// Extract voice data if present
-	var callID *int64
-	var recordingURL, transcriptionText, transcriptionStatus *string
-	var callDuration *int
-	var callFrom, callTo, answeredByName, callLocation *string
-	var callStartedAt *time.Time
-	if d.Data != nil {
-		callID = d.Data.CallID
-		recordingURL = d.Data.RecordingURL
-		transcriptionText = d.Data.TranscriptionText
-		transcriptionStatus = d.Data.TranscriptionStatus
-		callDuration = d.Data.CallDuration
-		callFrom = d.Data.callFrom()
-		callTo = d.Data.callTo()
-		callLocation = d.Data.Location
-		callStartedAt = d.Data.StartedAt
-		answeredByName = d.Data.AnsweredByName
-		if answeredByName == nil && d.Data.AnsweredByID != nil {
-			var name string
-			if err := tx.QueryRowContext(ctx,
-				`SELECT name FROM agents WHERE org_id = $1 AND zendesk_user_id = $2`,
-				orgID, *d.Data.AnsweredByID,
-			).Scan(&name); err == nil {
-				answeredByName = &name
-			}
-		}
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO ticket_comments
-			(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
-			 call_id, recording_url, transcription_text, transcription_status, call_duration,
-			 call_from, call_to, answered_by_name, call_location, call_started_at)
-		VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
-		        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-		ON CONFLICT (ticket_id, zendesk_comment_id) DO NOTHING`,
-		ticketID, customerAuthorID, agentAuthorID, role,
-		d.Body, nilIfEmpty(d.HtmlBody), mapCommentChannel(d.Via.Channel, d.Public), d.ID, d.CreatedAt,
-		callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
-		callFrom, callTo, answeredByName, callLocation, callStartedAt,
-	)
-	if err != nil {
-		return fmt.Errorf("upsert comment: %w", err)
-	}
-
-	// Reset error count so tickets with new comments get a fresh attempt,
-	// even if they previously hit the error limit.
-	if _, err = tx.ExecContext(ctx,
-		`UPDATE tickets SET ai_summary_stale = TRUE, ai_summary_error_count = 0 WHERE id = $1`, ticketID,
-	); err != nil {
-		return fmt.Errorf("mark ticket stale: %w", err)
+	if err := insertCommentForTicket(ctx, db, tx, orgID, ticketID, d, limiter); err != nil {
+		return err
 	}
 
 	return tx.Commit()
 }
 
-func handleCommentUpdated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail) error {
-	// Only the body changes on a comment update (agent redaction).
-	_, err := db.ExecContext(ctx, `
-		UPDATE ticket_comments
-		SET body = $1, updated_at = now()
-		WHERE zendesk_comment_id = $2
-		  AND ticket_id IN (SELECT id FROM tickets WHERE org_id = $3 AND zendesk_ticket_id = $4)`,
-		d.Body, d.ID, orgID, d.TicketID,
-	)
-	return err
+func handleCommentUpdated(ctx context.Context, db *sql.DB, orgID string, d *webhookCommentDetail, limiter *ratelimit.Limiter) error {
+	// Resolve the ticket. If it doesn't exist yet, there's nothing to update.
+	var ticketID string
+	if err := db.QueryRowContext(ctx,
+		`SELECT id FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
+		orgID, d.TicketID,
+	).Scan(&ticketID); err == sql.ErrNoRows {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("look up ticket: %w", err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Delete all existing rows for this Zendesk comment (may be multiple for web chat).
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM ticket_comments WHERE ticket_id = $1 AND zendesk_comment_id = $2`,
+		ticketID, d.ID,
+	); err != nil {
+		return fmt.Errorf("delete comment rows: %w", err)
+	}
+
+	if err := insertCommentForTicket(ctx, db, tx, orgID, ticketID, d, limiter); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 func handleUserUpsert(ctx context.Context, db *sql.DB, orgID string, d *webhookUserDetail) error {

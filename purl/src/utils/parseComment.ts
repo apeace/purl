@@ -88,6 +88,9 @@ export function classifyCommChannel(channel: string, messageType: MessageType, r
   if (messageType === "web_chat") return "web_chat"
   if (messageType === "merge_notice") return "ticket_merge"
 
+  // Individual web chat sub-messages stored with channel='chat' by the backend
+  if (channel === "chat") return "web_chat"
+
   // Use channel + role to determine direction
   if (channel === "email") return role === "agent" ? "email_outbound" : "email_inbound"
   if (channel === "web") return role === "agent" ? "public_reply" : "web_form"
