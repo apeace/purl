@@ -59,8 +59,8 @@
                       <div class="preview-avatar" :style="{ background: cardPreviews[opt.id]!.avatarColor }">{{ cardPreviews[opt.id]!.name[0] }}</div>
                       <span class="preview-name">{{ cardPreviews[opt.id]!.name }}</span>
                     </div>
-                    <div class="preview-subject">{{ cardPreviews[opt.id]!.subject }}</div>
-                    <div class="preview-summary">{{ cardPreviews[opt.id]!.messages[0]?.text }}</div>
+                    <div class="preview-subject">{{ cardPreviews[opt.id]!.aiTitle ?? cardPreviews[opt.id]!.subject }}</div>
+                    <div class="preview-summary">{{ cardPreviews[opt.id]!.aiSummary ?? cardPreviews[opt.id]!.messages[0]?.text }}</div>
                   </div>
                 </div>
               </button>
@@ -461,16 +461,19 @@ function navigateFromHoverQueue(ticketId: string) {
 }
 
 .preview-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: rgba(226, 232, 240, 0.8);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(148, 163, 184, 0.6);
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .preview-subject {
   font-size: 15px;
   font-weight: 600;
-  color: rgba(226, 232, 240, 0.65);
+  color: #e2e8f0;
   line-height: 1.35;
 }
 
