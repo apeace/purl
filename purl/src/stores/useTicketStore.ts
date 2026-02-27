@@ -41,6 +41,9 @@ export interface Ticket {
   subject: string
   description: string
   createdAt: string
+  // ISO timestamp of the customer's most recent unanswered message, or undefined if the agent
+  // has already replied. Used to sort by longest waiting.
+  customerWaitingSince?: string
   wait: string
   avatarColor: string
   status: string
@@ -73,6 +76,12 @@ export function avatarColor(name: string): string {
   let hash = 0
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) & 0xffff
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]
+}
+
+/** Returns how many minutes a customer has been waiting for a reply, or 0 if the agent has replied. */
+export function waitingMinutes(ticket: Ticket): number {
+  if (!ticket.customerWaitingSince) return 0
+  return Math.floor((Date.now() - new Date(ticket.customerWaitingSince).getTime()) / 60000)
 }
 
 export function parseWait(str: string): number {
@@ -120,6 +129,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     subject: t.title ?? "",
     description: stripHtml(t.description ?? ""),
     createdAt,
+    customerWaitingSince: t.customer_waiting_since ?? undefined,
     wait: formatWait(createdAt),
     avatarColor: avatarColor(reporterName),
     status: t.zendesk_status ?? "",
@@ -219,17 +229,15 @@ export const useTicketStore = defineStore("tickets", () => {
   const hudOpen = computed(() => openTickets.value.length)
 
   const hudLongestWait = computed(() => {
-    if (!openTickets.value.length) return "0m"
-    let max = 0
-    let maxStr = "0m"
+    let maxMins = 0
     for (const t of openTickets.value) {
-      const mins = parseWait(t.wait)
-      if (mins > max) {
-        max = mins
-        maxStr = t.wait
-      }
+      const mins = waitingMinutes(t)
+      if (mins > maxMins) maxMins = mins
     }
-    return maxStr
+    if (maxMins < 60) return `${maxMins}m`
+    const hrs = Math.floor(maxMins / 60)
+    const rem = maxMins % 60
+    return rem ? `${hrs}h ${rem}m` : `${hrs}h`
   })
 
   const hudResolvedToday = computed(() => resolvedToday.value)

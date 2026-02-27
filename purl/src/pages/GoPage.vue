@@ -154,7 +154,7 @@ import ComingSoon from "../components/ComingSoon.vue"
 import ShiftHealth from "../components/ShiftHealth.vue"
 import TicketDetail from "../components/TicketDetail.vue"
 import { useAiStore } from "../stores/useAiStore"
-import { parseWait, useTicketStore } from "../stores/useTicketStore"
+import { parseWait, waitingMinutes, useTicketStore } from "../stores/useTicketStore"
 import type { Ticket } from "../stores/useTicketStore"
 
 const ticketStore = useTicketStore()
@@ -189,7 +189,7 @@ const cardStats = computed<Record<string, { stat: string; detail: string }>>(() 
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
   return {
     urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
-    waiting: { stat: hudLongestWait.value, detail: `${threads.value.length} in queue` },
+    waiting: { stat: hudLongestWait.value, detail: "" },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
     queue: { stat: `${hudOpen.value} open`, detail: `${resolvedToday.value} resolved` },
   }
@@ -199,11 +199,12 @@ const cardPreviews = computed<Record<string, Ticket | null>>(() => {
   const all = [...threads.value]
 
   const byWait = [...all].sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  const byWaiting = [...all].sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   const byQuick = [...all].sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
 
   return {
     urgent: byWait[0] ?? null,
-    waiting: byWait[0] ?? null,
+    waiting: byWaiting[0] ?? null,
     quick: byQuick[0] ?? null,
     queue: all[0] ?? null,
   }
@@ -214,8 +215,10 @@ const chosenOption = computed(() => priorityOptions.find((o) => o.id === chosenP
 const sortedQueue = computed(() => {
   const all = [...threads.value]
   const id = chosenPriority.value
-  if (id === "urgent" || id === "waiting") {
+  if (id === "urgent") {
     all.sort((a, b) => parseWait(b.wait) - parseWait(a.wait))
+  } else if (id === "waiting") {
+    all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
   } else if (id === "quick") {
     all.sort((a, b) => (aiSuggestions.value[b.id] ? 1 : 0) - (aiSuggestions.value[a.id] ? 1 : 0) || parseWait(a.wait) - parseWait(b.wait))
   }

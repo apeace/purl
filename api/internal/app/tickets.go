@@ -19,6 +19,9 @@ type ticketRow struct {
 	ReporterEmail   *string   `json:"reporter_email"`
 	AssigneeName    *string   `json:"assignee_name"`
 	CreatedAt       time.Time `json:"created_at"`
+	// CustomerWaitingSince is the timestamp of the customer's most recent message when no agent
+	// reply has been sent after it, or null if the agent has already replied.
+	CustomerWaitingSince *time.Time `json:"customer_waiting_since"`
 }
 
 type ticketCommentRow struct {
@@ -57,7 +60,17 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 		       c.name,
 		       (SELECT ce.email FROM customer_emails ce WHERE ce.customer_id = c.id LIMIT 1),
 		       a.name,
-		       t.created_at
+		       t.created_at,
+		       -- Most recent customer message timestamp, or null if an agent has already replied.
+		       -- COALESCE(received_at, created_at) handles older rows that predate the received_at column.
+		       (SELECT
+		            CASE WHEN MAX(CASE WHEN tc.role = 'customer' THEN COALESCE(tc.received_at, tc.created_at) END) >
+		                      COALESCE(MAX(CASE WHEN tc.role = 'agent' THEN COALESCE(tc.received_at, tc.created_at) END), '-infinity'::timestamptz)
+		                 THEN MAX(CASE WHEN tc.role = 'customer' THEN COALESCE(tc.received_at, tc.created_at) END)
+		                 ELSE NULL
+		            END
+		        FROM ticket_comments tc
+		        WHERE tc.ticket_id = t.id)
 		FROM tickets t
 		JOIN customers c ON c.id = t.reporter_id
 		LEFT JOIN agents a ON a.id = t.assignee_id
@@ -74,7 +87,7 @@ func (a *App) listTickets(w http.ResponseWriter, r *http.Request) {
 	tickets := []ticketRow{}
 	for rows.Next() {
 		var t ticketRow
-		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.CreatedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.Description, &t.ZendeskStatus, &t.ZendeskTicketID, &t.ReporterName, &t.ReporterEmail, &t.AssigneeName, &t.CreatedAt, &t.CustomerWaitingSince); err != nil {
 			http.Error(w, "scan failed", http.StatusInternalServerError)
 			log.Printf("listTickets scan: %v", err)
 			return
