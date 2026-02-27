@@ -1,8 +1,10 @@
 name: Deploy
 
-on:
-  push:
-    branches: [main]
+# Auto-deploy disabled for demo — re-enable after 2026-02-27
+# on:
+#   push:
+#     branches: [main]
+on: workflow_dispatch
 
 concurrency:
   group: deploy
