@@ -40,6 +40,8 @@
                 class="priority-card"
                 :class="{ 'priority-card--recommended': opt.id === recommendedStrategy }"
                 @click="choosePriority(opt)"
+                @mouseenter="hoveredPriority = opt.id"
+                @mouseleave="hoveredPriority = null"
               >
                 <div v-if="opt.id === recommendedStrategy" class="priority-rec-badge">
                   <Sparkles :size="10" /> Recommended
@@ -115,30 +117,35 @@
 
         <!-- Queue (always visible) -->
         <div class="queue-list">
-          <div class="queue-section-label">{{ activeThread ? "Up next" : "Your queue" }}</div>
-          <button
-            v-for="thread in displayQueue"
-            :key="thread.id"
-            class="queue-card"
-            @click="activeId = thread.id"
-          >
-            <div class="qcard-top">
-              <div class="qcard-avatar" :style="{ background: thread.avatarColor }">
-                {{ thread.name[0] }}
-              </div>
-              <div class="qcard-meta">
-                <div class="qcard-name">{{ thread.name }}
-                  <span class="qcard-company">· {{ thread.company }}</span>
+          <div class="queue-section-label">Queue</div>
+          <div v-if="isQueueComingSoon" class="queue-coming-soon">Coming soon</div>
+          <template v-else>
+            <button
+              v-for="thread in displayQueue"
+              :key="thread.id"
+              class="queue-card"
+              :class="{ 'queue-card--active': thread.id === activeId }"
+              @click="activeId = thread.id"
+            >
+              <div class="qcard-top">
+                <div class="qcard-avatar" :style="{ background: thread.avatarColor }">
+                  {{ thread.name[0] }}
                 </div>
-                <div class="qcard-subject">{{ thread.subject }}</div>
+                <div class="qcard-meta">
+                  <div class="qcard-name">{{ thread.name }}
+                    <span class="qcard-company">· {{ thread.company }}</span>
+                  </div>
+                  <div class="qcard-subject">{{ thread.subject }}</div>
+                </div>
               </div>
-            </div>
-            <div class="qcard-footer">
-              <span class="qcard-wait">
-                <Clock :size="11" /> {{ thread.wait }}
-              </span>
-            </div>
-          </button>
+              <div class="qcard-footer">
+                <span class="qcard-wait">
+                  <Clock :size="11" /> {{ thread.wait }}
+                </span>
+                <ChevronRight v-if="thread.id === activeId" :size="14" class="qcard-active-arrow" />
+              </div>
+            </button>
+          </template>
         </div>
 
       </div>
@@ -180,10 +187,26 @@ const priorityOptions = [
 
 const activeId = ref<string | null>(null)
 const chosenPriority = ref<string | null>(null)
+const hoveredPriority = ref<string | null>(null)
 
 const activeThread = computed(() => activeId.value != null ? threads.value.find((t) => t.id === activeId.value) : null)
-const queue = computed(() => threads.value.filter((t) => t.id !== activeId.value))
-const displayQueue = computed(() => activeThread.value ? queue.value : threads.value)
+
+// In active state, show the full sorted queue (with arrow on the current ticket).
+// In lobby state, sort by the hovered strategy or fall back to default order.
+const displayQueue = computed(() => {
+  if (activeThread.value) return sortedQueue.value
+  const s = hoveredPriority.value
+  if (!s || s === "urgent" || s === "quick") return []
+  const all = [...threads.value]
+  if (s === "waiting") all.sort((a, b) => waitingMinutes(b) - waitingMinutes(a))
+  else if (s === "queue") all.sort((a, b) => lastCustomerReplyMs(b) - lastCustomerReplyMs(a))
+  return all
+})
+
+const isQueueComingSoon = computed(() => {
+  if (activeThread.value) return false
+  return hoveredPriority.value === "urgent" || hoveredPriority.value === "quick"
+})
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
@@ -249,6 +272,7 @@ function goNext() {
 }
 
 function choosePriority(opt: typeof priorityOptions[number]) {
+  if (opt.id === "urgent" || opt.id === "quick") return
   chosenPriority.value = opt.id
   const first = cardPreviews.value[opt.id]
   if (first) {
@@ -258,9 +282,10 @@ function choosePriority(opt: typeof priorityOptions[number]) {
 
 function resolve() {
   const currentId = activeId.value
-  const nextThread = queue.value[0]
+  const idx = queueIndex.value
+  const next = sortedQueue.value[idx + 1] ?? sortedQueue.value[idx - 1] ?? null
   resolveTicket(currentId!)
-  activeId.value = nextThread ? nextThread.id : null
+  activeId.value = next ? next.id : null
 }
 
 watch(activeId, (val) => {
@@ -736,6 +761,35 @@ watch(activeId, (val) => {
   gap: 4px;
   font-size: 13px;
   color: rgba(148, 163, 184, 0.4);
+}
+
+.queue-card--active {
+  background: rgba(99, 102, 241, 0.06);
+  border-color: rgba(99, 102, 241, 0.22);
+}
+
+.queue-card--active:hover,
+.queue-card--active:active {
+  background: rgba(99, 102, 241, 0.1);
+  border-color: rgba(99, 102, 241, 0.35);
+}
+
+.qcard-active-arrow {
+  color: rgba(129, 140, 248, 0.6);
+  flex-shrink: 0;
+}
+
+.queue-coming-soon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.25);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 32px 16px;
 }
 
 /* ── Intermediate screens (tablets / small laptops) ────── */
