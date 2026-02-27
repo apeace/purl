@@ -956,8 +956,11 @@ function autoLinkUrls(text: string): string {
   )
 }
 
-// Load comments whenever the displayed ticket changes
-watch(() => props.ticketId, (id) => { loadComments(id) }, { immediate: true })
+// Load comments whenever the displayed ticket changes, then scroll to the latest message
+watch(() => props.ticketId, async (id) => {
+  await loadComments(id)
+  scrollToBottom()
+}, { immediate: true })
 
 const activeChannel = computed(() => {
   if (replyChannel.value) return replyChannel.value
