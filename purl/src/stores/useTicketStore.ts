@@ -239,7 +239,7 @@ export const useTicketStore = defineStore("tickets", () => {
 
   const hudOpen = computed(() => openTickets.value.length)
 
-  const hudWaiting = computed(() => openTickets.value.filter((t) => t.customerWaitingSince).length)
+  const hudWaiting = computed(() => openTickets.value.length)
 
   const hudResolvedToday = computed(() => {
     const startOfToday = new Date()

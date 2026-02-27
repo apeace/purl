@@ -188,12 +188,11 @@ const displayQueue = computed(() => activeThread.value ? queue.value : threads.v
 
 const cardStats = computed<Record<string, { stat: string; detail: string }>>(() => {
   const readyCount = threads.value.filter((t) => aiSuggestions.value[t.id]).length
-  const waitingCount = threads.value.filter((t) => t.customerWaitingSince).length
   return {
     urgent: { stat: `Longest: ${hudLongestWait.value}`, detail: `${threads.value.length} in queue` },
     waiting: { stat: hudLongestWait.value, detail: "" },
     quick: { stat: `${readyCount} AI solutions ready`, detail: `${threads.value.length} in queue` },
-    queue: { stat: `${waitingCount} waiting`, detail: "" },
+    queue: { stat: `${threads.value.length} waiting`, detail: "" },
   }
 })
 
