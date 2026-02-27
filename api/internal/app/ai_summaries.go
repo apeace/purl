@@ -141,6 +141,10 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 				recordError("parse json response", fmt.Errorf("%w (raw: %q)", err, raw))
 				return
 			}
+			if analysis.Title == "" || analysis.Summary == "" {
+				recordError("incomplete json response", fmt.Errorf("title or summary missing (raw: %q)", raw))
+				return
+			}
 
 			// ai_title uses COALESCE so it is only set on first generation and never overwritten.
 			if _, err := db.ExecContext(ctx, `
@@ -167,10 +171,12 @@ func GenerateSummaries(ctx context.Context, db *sql.DB, ollamaURL, ollamaModel s
 
 func buildAnalysisPrompt(title, firstInquiry string, commentLines []string) string {
 	var b strings.Builder
-	b.WriteString("Analyze this customer support ticket and respond with a JSON object with exactly these fields:\n")
+	b.WriteString("Analyze this customer support ticket and respond with a JSON object with exactly these three fields:\n")
 	b.WriteString("- \"title\": A 4-5 word title based only on the customer's first message (e.g. \"Login issue with SSO\")\n")
 	b.WriteString("- \"summary\": 1-2 terse sentences about the current state of the ticket — issue and status only, no intro phrases like \"The customer\" or \"This ticket\"\n")
 	b.WriteString("- \"temperature\": An integer 1-10 for how urgent or frustrated the customer is (1 = patient and calm, 10 = furious or threatening to cancel)\n")
+	b.WriteString("All three fields are required. Never leave title or summary empty.\n")
+	b.WriteString("Example response: {\"title\": \"Login issue with SSO\", \"summary\": \"SSO login fails with a 403 error. Agent requested HAR file.\", \"temperature\": 4}\n")
 	b.WriteString("Output only the JSON object, nothing else.\n\n")
 	b.WriteString("Ticket subject: ")
 	b.WriteString(title)
