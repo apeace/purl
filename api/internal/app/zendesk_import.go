@@ -356,8 +356,8 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 
 		var ticketID string
 		err := db.QueryRow(
-			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, created_at, updated_at, zendesk_status, zendesk_ticket_id)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8::zendesk_status_category, $9)
+			`INSERT INTO tickets (title, description, reporter_id, assignee_id, org_id, received_at, zendesk_status, zendesk_ticket_id)
+			 VALUES ($1, $2, $3, $4, $5, $6, $7::zendesk_status_category, $8)
 			 RETURNING id`,
 			ticket.Subject,
 			ticket.Description,
@@ -365,7 +365,6 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 			assigneeID,
 			orgID,
 			ticket.CreatedAt,
-			ticket.UpdatedAt,
 			mapZendeskStatus(ticket.Status),
 			ticket.ID,
 		).Scan(&ticketID)
@@ -455,9 +454,9 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 						INSERT INTO ticket_comments
 							(ticket_id, customer_author_id, agent_author_id, role, body, html_body,
 							 channel, zendesk_comment_id, zendesk_sub_index, author_display_name,
-							 created_at, updated_at)
+							 received_at)
 						VALUES ($1, $2, $3, $4::comment_role, $5, NULL,
-						        'chat'::comment_channel, $6, $7, $8, $9, $9)`,
+						        'chat'::comment_channel, $6, $7, $8, $9)`,
 						ticketID, lineCustomerAuthorID, lineAgentAuthorID, line.Role,
 						line.Text, c.ID, i, line.Speaker, c.CreatedAt,
 					); err != nil {
@@ -492,10 +491,10 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 
 				if _, err := db.Exec(`
 					INSERT INTO ticket_comments
-						(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, created_at, updated_at,
+						(ticket_id, customer_author_id, agent_author_id, role, body, html_body, channel, zendesk_comment_id, received_at,
 						 call_id, recording_url, transcription_text, transcription_status, call_duration,
 						 call_from, call_to, answered_by_name, call_location, call_started_at)
-					VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9, $9,
+					VALUES ($1, $2, $3, $4::comment_role, $5, $6, $7::comment_channel, $8, $9,
 					        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 					ticketID, customerAuthorID, agentAuthorID, role, c.Body, nilIfEmpty(c.HtmlBody), mapCommentChannel(c.Via.Channel, c.Public), c.ID, c.CreatedAt,
 					callID, recordingURL, transcriptionText, transcriptionStatus, callDuration,
@@ -559,7 +558,7 @@ func ImportZendeskData(ctx context.Context, db *sql.DB, limiter *ratelimit.Limit
 			$1,
 			bc.id,
 			t.id,
-			(ROW_NUMBER() OVER (PARTITION BY bc.id ORDER BY t.created_at ASC) - 1)::integer
+			(ROW_NUMBER() OVER (PARTITION BY bc.id ORDER BY t.received_at ASC) - 1)::integer
 		FROM tickets t
 		JOIN board_columns bc ON bc.board_id = $1 AND bc.zendesk_status = t.zendesk_status
 		WHERE t.org_id = $2
