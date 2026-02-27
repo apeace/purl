@@ -118,7 +118,7 @@ function toTicket(raw: AppTicketRow): Ticket {
   const t = raw as TicketRowExt
   const id = t.id ?? ""
   const reporterName = t.reporter_name ?? ""
-  const createdAt = t.created_at ?? ""
+  const receivedAt = t.received_at ?? ""
   const zendeskId = t.zendesk_ticket_id
   return {
     id,
@@ -128,15 +128,15 @@ function toTicket(raw: AppTicketRow): Ticket {
     zendeskTicketId: zendeskId ?? undefined,
     subject: t.title ?? "",
     description: stripHtml(t.description ?? ""),
-    createdAt,
+    createdAt: receivedAt,
     customerWaitingSince: t.customer_waiting_since ?? undefined,
-    wait: formatWait(createdAt),
+    wait: formatWait(receivedAt),
     avatarColor: avatarColor(reporterName),
     status: t.zendesk_status ?? "",
     read: false,
     starred: false,
     labels: [],
-    time: formatTime(createdAt),
+    time: formatTime(receivedAt),
     email: t.reporter_email ?? "",
     phone: "",
     subscription: { status: "active", id: "", plan: "" },
@@ -146,7 +146,7 @@ function toTicket(raw: AppTicketRow): Ticket {
     notes: "",
     messages: [],
     ticketHistory: [
-      { time: formatWait(createdAt), event: "Ticket created" },
+      { time: formatWait(receivedAt), event: "Ticket created" },
     ],
     subscriberHistory: [],
   }
@@ -404,7 +404,7 @@ export const useTicketStore = defineStore("tickets", () => {
       id: index,
       from: role === "agent" ? "agent" : "customer",
       channel,
-      time: formatWait(c.created_at ?? ""),
+      time: formatTime(c.received_at ?? ""),
       text: displayText,
       htmlBody: displayHtml,
       authorName: displayAuthor,
