@@ -147,11 +147,11 @@
           <Settings :size="18" class="nav-icon" />
           <span class="nav-label">Settings</span>
         </RouterLink>
-        <div class="user-card">
-          <div class="user-avatar">A</div>
+        <div class="user-card" role="button" @click="handleLogout">
+          <div class="user-avatar">{{ userName?.charAt(0) ?? "" }}</div>
           <div class="user-info">
-            <div class="user-name">Alex Chen</div>
-            <div class="user-email">alex@purl.io</div>
+            <div class="user-name">{{ userName }}</div>
+            <div class="user-email">{{ userEmail }}</div>
           </div>
         </div>
       </div>
@@ -170,7 +170,7 @@
       </div>
       <div class="mobile-header-right">
         <button class="icon-btn" @click="openCmd"><Search :size="16" /></button>
-        <div class="user-avatar user-avatar--sm">A</div>
+        <div class="user-avatar user-avatar--sm">{{ userName?.charAt(0) ?? "" }}</div>
       </div>
     </header>
 
@@ -189,7 +189,7 @@
             <span>Search…</span>
             <kbd>⌘K</kbd>
           </button>
-          <div class="user-avatar user-avatar--sm">A</div>
+          <div class="user-avatar user-avatar--sm">{{ userName?.charAt(0) ?? "" }}</div>
         </div>
       </div>
 
@@ -241,6 +241,7 @@ import CreateBoardModal from "../components/CreateBoardModal.vue"
 import StagePickerModal from "../components/StagePickerModal.vue"
 import { useKanbanStore } from "../stores/useKanbanStore"
 import type { BoardStage } from "../stores/useKanbanStore"
+import { useUserStore } from "../stores/useUserStore"
 
 const open = ref(false)
 const collapsed = ref(false)
@@ -250,6 +251,9 @@ const cmdInput = ref<HTMLInputElement | null>(null)
 const kanbanStore = useKanbanStore()
 const { boards } = storeToRefs(kanbanStore)
 const { addCardToBoard, deleteBoard, renameBoard } = kanbanStore
+
+const userStore = useUserStore()
+const { name: userName, email: userEmail } = storeToRefs(userStore)
 
 const navBefore = [
   { path: "/go", label: "Go", icon: Zap },
@@ -386,6 +390,11 @@ function closeStagePicker() {
   stagePickerBoard.value = null
   stagePickerBoardId.value = null
   stagePickerTicketId.value = null
+}
+
+async function handleLogout() {
+  await userStore.logout()
+  router.push("/login")
 }
 
 const navResetKey = ref(0)
@@ -888,6 +897,12 @@ onBeforeUnmount(() => document.removeEventListener("keydown", onKeyDown))
   margin-top: 4px;
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.user-card:hover {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .user-avatar {

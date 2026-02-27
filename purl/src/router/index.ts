@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router"
 import type { RouteRecordRaw } from "vue-router"
+import { getSessionToken } from "../utils/api"
 import DashboardPage from "../pages/DashboardPage.vue"
 import GoPage from "../pages/GoPage.vue"
 import InboxPage from "../pages/InboxPage.vue"
@@ -22,7 +23,15 @@ const routes: RouteRecordRaw[] = [
   { path: "/settings", component: SettingsPage },
 ]
 
-export default createRouter({
+const router = createRouter({
   history: createWebHistory(),
   routes,
 })
+
+router.beforeEach((to) => {
+  if (to.meta.public) return true
+  if (!getSessionToken()) return "/login"
+  return true
+})
+
+export default router

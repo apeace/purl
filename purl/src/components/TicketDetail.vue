@@ -759,7 +759,7 @@ import { AlertTriangle, ChevronDown, ChevronRight, Clock, Cog, Columns3, DollarS
 import { storeToRefs } from "pinia"
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
 import { useAiStore } from "../stores/useAiStore"
-import { API_KEY_STORAGE_KEY } from "../utils/api"
+import { API_KEY_STORAGE_KEY, SESSION_TOKEN_KEY } from "../utils/api"
 import type { Message } from "../stores/useTicketStore"
 import { avatarColor, useTicketStore } from "../stores/useTicketStore"
 import ComingSoon from "./ComingSoon.vue"
@@ -864,6 +864,10 @@ const zendeskUrl = computed(() => {
 
 function recordingUrl(msg: Message): string {
   const base = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
+  const sessionToken = localStorage.getItem(SESSION_TOKEN_KEY) ?? ""
+  if (sessionToken) {
+    return `${base}/tickets/${props.ticketId}/comments/${msg.commentId}/recording?session_token=${encodeURIComponent(sessionToken)}`
+  }
   const key = localStorage.getItem(API_KEY_STORAGE_KEY) ?? ""
   return `${base}/tickets/${props.ticketId}/comments/${msg.commentId}/recording?api_key=${encodeURIComponent(key)}`
 }

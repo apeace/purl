@@ -34,7 +34,7 @@ defineEmits<{
 
 const ticketStore = useTicketStore()
 const { tickets } = storeToRefs(ticketStore)
-const { CURRENT_USER } = useUserStore()
+const { name: currentUserName } = storeToRefs(useUserStore())
 
 const tabs = computed(() => [
   {
@@ -47,7 +47,7 @@ const tabs = computed(() => [
     key: "mine",
     label: "Mine",
     icon: User,
-    count: tickets.value.filter((t) => t.assignee === CURRENT_USER && t.status !== "closed").length,
+    count: tickets.value.filter((t) => t.assignee === currentUserName.value && t.status !== "closed").length,
   },
   {
     key: "unassigned",

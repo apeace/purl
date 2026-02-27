@@ -12,13 +12,14 @@ import (
 
 // App holds shared dependencies for all handlers.
 type App struct {
-	db    *sql.DB
-	redis *redis.Client
+	db             *sql.DB
+	redis          *redis.Client
+	googleClientID string
 }
 
-// New constructs an App with the given database and Redis client.
-func New(db *sql.DB, rdb *redis.Client) *App {
-	return &App{db: db, redis: rdb}
+// New constructs an App with the given database, Redis client, and Google client ID.
+func New(db *sql.DB, rdb *redis.Client, googleClientID string) *App {
+	return &App{db: db, redis: rdb, googleClientID: googleClientID}
 }
 
 // Handler builds and returns the chi router with all middleware and routes registered.
@@ -38,11 +39,21 @@ func (a *App) Handler() http.Handler {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	// Public auth routes
+	r.Post("/auth/google", a.googleAuth)
+
+	// Session-protected auth routes
+	r.Group(func(r chi.Router) {
+		r.Use(a.requireSession)
+		r.Get("/auth/me", a.authMe)
+		r.Post("/auth/logout", a.authLogout)
+	})
+
 	// Recording proxy uses query-param auth so <audio> elements can reference it directly
 	r.Get("/tickets/{ticketID}/comments/{commentID}/recording", a.proxyRecording)
 
 	r.Group(func(r chi.Router) {
-		r.Use(a.requireAPIKey)
+		r.Use(a.requireAuth)
 		r.Get("/kanbans", a.listKanbans)
 		r.Post("/kanbans", a.createKanban)
 		r.Delete("/kanbans/{boardID}", a.deleteKanban)

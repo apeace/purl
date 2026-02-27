@@ -1,27 +1,91 @@
 <script setup lang="ts">
-import { ref } from "vue"
+import { onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { setApiKey } from "../utils/api"
+import { setSessionToken } from "../utils/api"
 import { useKanbanStore } from "../stores/useKanbanStore"
 import { useTicketStore } from "../stores/useTicketStore"
+import { useUserStore } from "../stores/useUserStore"
+
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:9090"
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? ""
 
 const router = useRouter()
 const { loadBoards } = useKanbanStore()
 const { reloadTickets } = useTicketStore()
-const apiKey = ref("")
+const userStore = useUserStore()
 const error = ref("")
+const loading = ref(false)
 
-function submit() {
-  const key = apiKey.value.trim()
-  if (!key) {
-    error.value = "Please enter an API key."
-    return
+async function handleGoogleCallback(response: { credential: string }) {
+  loading.value = true
+  error.value = ""
+
+  try {
+    const res = await fetch(`${BASE_URL}/auth/google`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: response.credential }),
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      error.value = text.trim() || "Sign in failed."
+      loading.value = false
+      return
+    }
+
+    const data = await res.json()
+    setSessionToken(data.token)
+    userStore.name = data.user.name
+    userStore.email = data.user.email
+    userStore.orgName = data.user.org.name
+    userStore.isAuthenticated = true
+    loadBoards()
+    reloadTickets()
+    router.push("/")
+  } catch {
+    error.value = "Something went wrong. Please try again."
+    loading.value = false
   }
-  setApiKey(key)
-  loadBoards()
-  reloadTickets()
-  router.push("/")
 }
+
+function loadGoogleScript() {
+  if (document.getElementById("google-gsi")) return
+  const script = document.createElement("script")
+  script.id = "google-gsi"
+  script.src = "https://accounts.google.com/gsi/client"
+  script.async = true
+  script.onload = initGoogle
+  document.head.appendChild(script)
+}
+
+function initGoogle() {
+  const google = (window as any).google
+  if (!google) return
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCallback,
+  })
+  google.accounts.id.renderButton(
+    document.getElementById("google-signin-btn"),
+    {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      width: 348,
+      text: "signin_with",
+      shape: "pill",
+    },
+  )
+}
+
+onMounted(() => {
+  if ((window as any).google) {
+    initGoogle()
+  } else {
+    loadGoogleScript()
+  }
+})
 </script>
 
 <template>
@@ -32,23 +96,14 @@ function submit() {
         <span class="logo-name">Purl</span>
       </div>
 
-      <h1 class="title">Enter your API key</h1>
-      <p class="subtitle">Your key will be stored locally and sent with every request.</p>
+      <h1 class="title">Sign in to Purl</h1>
+      <p class="subtitle">Use your Google account to continue.</p>
 
-      <form @submit.prevent="submit" class="form">
-        <textarea
-          v-model="apiKey"
-          class="key-input"
-          :class="{ error: error }"
-          placeholder="Paste your API key…"
-          rows="3"
-          spellcheck="false"
-          autocomplete="off"
-          @input="error = ''"
-        />
-        <p v-if="error" class="error-msg">{{ error }}</p>
-        <button type="submit" class="btn">Continue</button>
-      </form>
+      <div class="google-wrap">
+        <div id="google-signin-btn" />
+        <div v-if="loading" class="loading-text">Signing in...</div>
+      </div>
+      <p v-if="error" class="error-msg">{{ error }}</p>
     </div>
   </div>
 </template>
@@ -119,59 +174,22 @@ function submit() {
   line-height: 1.5;
 }
 
-.form {
+.google-wrap {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 12px;
 }
 
-.key-input {
-  width: 100%;
-  box-sizing: border-box;
-  padding: 12px 14px;
-  border: 1.5px solid #e4e4e7;
-  border-radius: 10px;
-  font-family: monospace;
+.loading-text {
   font-size: 13px;
-  color: #18181b;
-  background: #fafaf9;
-  resize: none;
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.key-input:focus {
-  border-color: #18181b;
-  background: #fff;
-}
-
-.key-input.error {
-  border-color: #ef4444;
+  color: #71717a;
 }
 
 .error-msg {
   font-size: 12px;
   color: #ef4444;
-  margin: 0;
-}
-
-.btn {
-  padding: 11px;
-  background: #18181b;
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s, transform 0.1s;
-}
-
-.btn:hover {
-  background: #27272a;
-}
-
-.btn:active {
-  transform: scale(0.98);
+  margin: 12px 0 0;
+  text-align: center;
 }
 </style>

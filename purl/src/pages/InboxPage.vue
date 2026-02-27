@@ -305,7 +305,7 @@ import { STATUS_LIST, STATUS_PILL } from "../utils/colors"
 const ticketStore = useTicketStore()
 const { sortBy, sortedTickets, uniqueAssignees } = storeToRefs(ticketStore)
 const { archiveTicket, deleteTicket, filterAssignees, filterStatuses, markRead, resolveTicket, toggleStar } = ticketStore
-const { CURRENT_USER } = useUserStore()
+const { name: currentUserName } = storeToRefs(useUserStore())
 
 const activeTab = ref("all")
 
@@ -384,7 +384,7 @@ const emails = computed(() => {
 
   switch (activeTab.value) {
     case "mine":
-      list = list.filter((t) => t.assignee === CURRENT_USER && t.status !== "closed")
+      list = list.filter((t) => t.assignee === currentUserName.value && t.status !== "closed")
       break
     case "unassigned":
       list = list.filter((t) => t.assignee === "Unassigned" && t.status !== "closed")

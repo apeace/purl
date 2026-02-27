@@ -21,16 +21,18 @@ import (
 var migrations embed.FS
 
 type config struct {
-	DatabaseURL string
-	RedisURL    string
-	Port        string
+	DatabaseURL    string
+	RedisURL       string
+	Port           string
+	GoogleClientID string
 }
 
 func loadConfig() config {
 	return config{
-		DatabaseURL: requireEnv("DATABASE_URL"),
-		RedisURL:    requireEnv("REDIS_URL"),
-		Port:        getEnv("PORT", "9090"),
+		DatabaseURL:    requireEnv("DATABASE_URL"),
+		RedisURL:       requireEnv("REDIS_URL"),
+		Port:           getEnv("PORT", "9090"),
+		GoogleClientID: getEnv("GOOGLE_CLIENT_ID", ""),
 	}
 }
 
@@ -94,7 +96,7 @@ func main() {
 	}
 	log.Println("connected to redis")
 
-	a := app.New(db, rdb)
+	a := app.New(db, rdb, cfg.GoogleClientID)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	log.Printf("listening on %s", addr)
