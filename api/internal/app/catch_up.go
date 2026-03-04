@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log"
 	"sync"
 
@@ -86,6 +87,10 @@ func CatchUpZendeskTickets(ctx context.Context, db *sql.DB, limiter *ratelimit.L
 
 func catchUpTicket(ctx context.Context, db *sql.DB, limiter *ratelimit.Limiter, orgID string, zendeskID flexInt64) error {
 	ticket, err := fetchZendeskTicket(ctx, db, orgID, zendeskID, limiter)
+	if errors.Is(err, errZendeskNotFound) {
+		// Ticket was deleted in Zendesk — remove it from our DB.
+		return handleTicketDeleted(ctx, db, orgID, zendeskID)
+	}
 	if err != nil {
 		return err
 	}

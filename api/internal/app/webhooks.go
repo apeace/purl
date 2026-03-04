@@ -18,6 +18,10 @@ import (
 	"purl/api/internal/ratelimit"
 )
 
+// errZendeskNotFound is returned by fetchZendeskTicket when the Zendesk API
+// returns 404 — the ticket no longer exists and should be removed from our DB.
+var errZendeskNotFound = fmt.Errorf("zendesk: ticket not found")
+
 // ── Zendesk webhook payload types ────────────────────────────────────────────
 
 // flexInt64 unmarshals both numeric and quoted-string JSON integers.
@@ -1037,6 +1041,9 @@ func fetchZendeskTicket(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errZendeskNotFound
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("zendesk returned %s: %s", resp.Status, respBody)
