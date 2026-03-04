@@ -251,6 +251,13 @@ func processZendeskEvent(ctx context.Context, db *sql.DB, orgID, eventType strin
 		}
 		return handleTicketUpsert(ctx, db, orgID, &d, limiter)
 
+	case "zen:event-type:ticket.status_changed":
+		var d webhookTicketDetail
+		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
+			return fmt.Errorf("unmarshal ticket detail: %w", err)
+		}
+		return handleTicketStatusChanged(ctx, db, orgID, &d)
+
 	case "zen:event-type:ticket.deleted":
 		var d webhookTicketDeletedDetail
 		if err := json.Unmarshal(envelope.Detail, &d); err != nil {
@@ -397,6 +404,54 @@ func handleTicketDeleted(ctx context.Context, db *sql.DB, orgID string, zendeskT
 		orgID, zendeskTicketID,
 	)
 	return err
+}
+
+func handleTicketStatusChanged(ctx context.Context, db *sql.DB, orgID string, d *webhookTicketDetail) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	newStatus := mapZendeskStatus(d.Status)
+
+	// Capture old status before updating so we can detect changes for kanban sync.
+	var ticketID, oldStatus string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, zendesk_status::text FROM tickets WHERE org_id = $1 AND zendesk_ticket_id = $2`,
+		orgID, d.ID,
+	).Scan(&ticketID, &oldStatus)
+	if err == sql.ErrNoRows {
+		// Ticket not yet in our DB; nothing to update.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lookup ticket: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE tickets SET
+			zendesk_status     = $1::zendesk_status_category,
+			zendesk_updated_at = $2,
+			resolved_at        = CASE
+				WHEN $1::zendesk_status_category IN ('solved'::zendesk_status_category, 'closed'::zendesk_status_category)
+				THEN COALESCE(resolved_at, $2::TIMESTAMPTZ)
+				ELSE NULL
+			END
+		WHERE id = $3`,
+		newStatus, d.UpdatedAt, ticketID,
+	)
+	if err != nil {
+		return fmt.Errorf("update ticket status: %w", err)
+	}
+
+	if oldStatus != newStatus {
+		if err := syncTicketToDefaultKanban(ctx, tx, orgID, ticketID, newStatus); err != nil {
+			return fmt.Errorf("sync kanban: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 // ── Web chat parsing ──────────────────────────────────────────────────────────
@@ -1047,11 +1102,11 @@ func syncTicketComments(ctx context.Context, db *sql.DB, orgID string, zendeskTi
 }
 
 // mapZendeskStatus maps a raw Zendesk ticket status string to our
-// zendesk_status_category enum value.
+// zendesk_status_category enum value. Accepts mixed case (e.g. "SOLVED").
 func mapZendeskStatus(s string) string {
-	switch s {
+	switch strings.ToLower(s) {
 	case "new", "open", "pending", "solved", "closed":
-		return s
+		return strings.ToLower(s)
 	case "hold":
 		return "pending"
 	default:
