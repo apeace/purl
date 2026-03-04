@@ -10,17 +10,17 @@
           <div class="mobile-lobby-hud">
             <div class="hud">
               <div class="hud-stat">
-                <span class="hud-value">{{ hudWaiting }}</span>
+                <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudWaiting : '—' }}</span>
                 <span class="hud-label">waiting</span>
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
-                <span class="hud-value">{{ hudLongestWait }}</span>
+                <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudLongestWait : '—' }}</span>
                 <span class="hud-label">longest wait</span>
               </div>
               <div class="hud-divider" />
               <div class="hud-stat">
-                <span class="hud-value">{{ hudResolvedToday }}</span>
+                <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudResolvedToday : '—' }}</span>
                 <span class="hud-label">resolved today</span>
               </div>
             </div>
@@ -76,17 +76,17 @@
         <!-- HUD -->
         <div class="hud">
           <div class="hud-stat">
-            <span class="hud-value">{{ hudWaiting }}</span>
+            <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudWaiting : '—' }}</span>
             <span class="hud-label">waiting</span>
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
-            <span class="hud-value">{{ hudLongestWait }}</span>
+            <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudLongestWait : '—' }}</span>
             <span class="hud-label">longest wait</span>
           </div>
           <div class="hud-divider" />
           <div class="hud-stat">
-            <span class="hud-value">{{ hudResolvedToday }}</span>
+            <span class="hud-value" :class="{ 'hud-value--loading': !ticketsLoaded }">{{ ticketsLoaded ? hudResolvedToday : '—' }}</span>
             <span class="hud-label">resolved today</span>
           </div>
         </div>
@@ -162,6 +162,7 @@ const {
   hudResolvedToday,
   hudWaiting,
   openTickets: threads,
+  ticketsLoaded,
 } = storeToRefs(ticketStore)
 
 const aiStore = useAiStore()
@@ -530,6 +531,16 @@ function navigateFromHoverQueue(ticketId: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+
+.hud-value--loading {
+  animation: hud-pulse 1.2s ease-in-out infinite;
+  color: rgba(148, 163, 184, 0.3);
+}
+
+@keyframes hud-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .hud-label {

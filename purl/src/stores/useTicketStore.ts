@@ -353,6 +353,8 @@ export const useTicketStore = defineStore("tickets", () => {
 
   // ── Data fetching ────────────────────────────────────────
 
+  const ticketsLoaded = ref(false)
+
   let loadPromise: Promise<void> | null = null
 
   function loadTickets() {
@@ -364,13 +366,16 @@ export const useTicketStore = defineStore("tickets", () => {
         getOrg().then(({ data }) => {
           if (data?.zendesk_subdomain) zendeskSubdomain.value = data.zendesk_subdomain
         }),
-      ]).then(() => {})
+      ]).then(() => {
+        ticketsLoaded.value = true
+      })
     }
     return loadPromise
   }
 
   function reloadTickets() {
     loadPromise = null
+    ticketsLoaded.value = false
     return loadTickets()
   }
 
@@ -656,6 +661,7 @@ export const useTicketStore = defineStore("tickets", () => {
     setTemperature,
     sortBy,
     sortedTickets,
+    ticketsLoaded,
     zendeskSubdomain,
     tickets,
     toggleStar,
