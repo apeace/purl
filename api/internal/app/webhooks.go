@@ -177,8 +177,8 @@ func (a *App) handleZendeskWebhook(w http.ResponseWriter, r *http.Request) {
 // ProcessPendingWebhooks fetches all unprocessed webhook events from the
 // zendesk_webhook_events table and processes them in arrival order. It marks
 // each successfully processed event with the current timestamp. Events that fail
-// processing are left with processed_at = NULL so they are retried on the next
-// call. Unsupported event types are silently acknowledged and also marked as
+// processing are also marked with processed_at = now() (and last_error set) so
+// they are not retried. Unsupported event types are silently acknowledged and also marked as
 // processed to prevent them from accumulating.
 //
 // limiter may be nil to skip rate limiting. Returns the number of events marked as processed.
@@ -217,9 +217,9 @@ func ProcessPendingWebhooks(ctx context.Context, db *sql.DB, limiter *ratelimit.
 	processed := 0
 	for _, e := range events {
 		if err := processZendeskEvent(ctx, db, e.orgID, e.eventType, e.payload, limiter); err != nil {
-			log.Printf("process-zendesk-webhooks: event %s (%s) failed: %v — will retry", e.id, e.eventType, err)
+			log.Printf("process-zendesk-webhooks: event %s (%s) failed (no retry): %v", e.id, e.eventType, err)
 			if _, dbErr := db.ExecContext(ctx,
-				`UPDATE zendesk_webhook_events SET last_error = $1 WHERE id = $2`,
+				`UPDATE zendesk_webhook_events SET processed_at = now(), last_error = $1 WHERE id = $2`,
 				err.Error(), e.id,
 			); dbErr != nil {
 				log.Printf("process-zendesk-webhooks: record error for event %s: %v", e.id, dbErr)
